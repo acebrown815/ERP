@@ -15,6 +15,7 @@ from app.modules.audit import api as audit
 from app.modules.categories import api as categories
 from app.modules.payments import posting
 from app.modules.payments.models import PaymentAccount, PaymentEntry
+from app.modules.salary import api as salary
 from app.modules.settings import api as settings
 
 ENTRY_FIELDS = (
@@ -38,6 +39,7 @@ ENTRY_FIELDS = (
     "fee_paid_by",
     "project_id",
     "employee_id",
+    "salary_period_id",
     "reference_no",
     "description",
 )
@@ -277,7 +279,6 @@ async def create_draft(
         created_by=actor_id,
         updated_by=actor_id,
         fee_amount=Decimal(0),
-        exchange_rate=Decimal(1),
     )
     await apply_fields(session, pe, data)
     session.add(pe)
@@ -382,6 +383,8 @@ async def submit(session: AsyncSession, *, actor_id: uuid.UUID, pe_id: uuid.UUID
     if pe.status != "draft":
         raise Conflict(f"Payment is already {pe.status}")
     result = await posting.build(session, pe)
+    if result.eligible_amount_base is not None:
+        await salary.assert_open(session, pe.posting_date, "a receipt dated in it can be submitted")
     entry = await accounting.post_journal(
         session,
         actor_id=actor_id,
@@ -395,13 +398,14 @@ async def submit(session: AsyncSession, *, actor_id: uuid.UUID, pe_id: uuid.UUID
     )
     pe.base_amount = result.base_amount
     pe.eligible_amount_base = result.eligible_amount_base
+    # Freeze the rates actually used (typed, or the saved rate for the date); later rate changes don't apply.
+    pe.exchange_rate = result.exchange_rate
     if result.employee_id and not pe.employee_id:
         pe.employee_id = result.employee_id
     if pe.direction == "internal_transfer":
         if pe.received_amount is None:
             pe.received_amount = pe.amount
-        if pe.received_exchange_rate is None:
-            pe.received_exchange_rate = pe.exchange_rate
+        pe.received_exchange_rate = result.received_exchange_rate or result.exchange_rate
     if result.eligible_amount_base is not None:
         base = await settings.base_currency(session)
         await attribution.activate(
@@ -411,6 +415,17 @@ async def submit(session: AsyncSession, *, actor_id: uuid.UUID, pe_id: uuid.UUID
             on=pe.posting_date,
             precision=base.precision,
         )
+    if result.rule == "P2" and pe.employee_id:
+        await salary.record_payment(
+            session,
+            payment_entry_id=pe.id,
+            employee_id=pe.employee_id,
+            amount=result.base_amount,
+            paid_on=pe.posting_date,
+            salary_period_id=pe.salary_period_id,
+        )
+    else:
+        pe.salary_period_id = None
     pe.status = "submitted"
     pe.journal_entry_id = entry.id
     pe.submitted_at = datetime.now(UTC)
@@ -435,10 +450,13 @@ async def cancel(session: AsyncSession, *, actor_id: uuid.UUID, pe_id: uuid.UUID
         raise Conflict("Only submitted payments can be cancelled")
     if pe.journal_entry_id is None:
         raise Conflict("Payment has no journal entry")
+    if pe.eligible_amount_base is not None:
+        await salary.assert_open(session, pe.posting_date, "a receipt dated in it can be cancelled")
     reversal = await accounting.reverse_journal(
         session, actor_id=actor_id, journal_entry_id=pe.journal_entry_id, reason=reason
     )
     await attribution.cancel(session, payment_id=pe.id)
+    await salary.remove_payment(session, payment_entry_id=pe.id)
     pe.status = "cancelled"
     pe.reversal_journal_entry_id = reversal.id
     pe.cancelled_at = datetime.now(UTC)

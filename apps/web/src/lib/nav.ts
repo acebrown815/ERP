@@ -29,7 +29,10 @@ export const NAV: NavSection[] = [
   {
     label: "Dashboard",
     icon: LayoutDashboard,
-    items: [{ label: "Overview", href: "/dashboard" }],
+    items: [
+      { label: "Overview", href: "/dashboard" },
+      { label: "My Salary", href: "/me", anyOf: ["salary.read"] },
+    ],
   },
   {
     label: "Accounting",
@@ -56,9 +59,9 @@ export const NAV: NavSection[] = [
     icon: Users,
     items: [
       { label: "Directory", href: "/employees", anyOf: ["employees.read"] },
-      { label: "Revenue Contributions", href: "/employees/revenue", anyOf: ["revenue.read"], phase: 3 },
-      { label: "Salary Formulas", href: "/employees/salary-formulas", anyOf: ["comp_formulas.read"], phase: 3 },
-      { label: "Salary", href: "/employees/salary", anyOf: ["salary.read"], phase: 3 },
+      { label: "Revenue Contributions", href: "/employees/revenue", anyOf: ["revenue.read"] },
+      { label: "Salary", href: "/employees/salary", anyOf: ["salary.read"] },
+      { label: "Salary Formulas", href: "/employees/salary-formulas", anyOf: ["comp_formulas.read"] },
     ],
   },
   {
@@ -86,7 +89,7 @@ export const NAV: NavSection[] = [
     icon: BarChart3,
     items: [
       { label: "Financial Reports", href: "/accounting/statements", anyOf: ["reports.financial"] },
-      { label: "Employee Reports", href: "/reports/employees", anyOf: ["revenue.read"], phase: 5 },
+      { label: "Employee Salary Report", href: "/reports/employees", anyOf: ["salary.read"] },
       { label: "Project Reports", href: "/reports/projects", anyOf: ["projects.read"], phase: 5 },
     ],
   },
@@ -101,6 +104,7 @@ export const NAV: NavSection[] = [
       { label: "Currencies & Rates", href: "/settings/currencies" },
       { label: "Payment Accounts", href: "/settings/payment-accounts", anyOf: ["payment_accounts.manage", "payments.create"] },
       { label: "Accounting Periods", href: "/settings/periods", anyOf: ["periods.close", "reports.financial"] },
+      { label: "Salary Cycle", href: "/settings/salary-cycle", anyOf: ["salary.read", "salary.configure_cycle"] },
       { label: "Data Import", href: "/settings/imports", anyOf: ["imports.manage"] },
       { label: "Audit Log", href: "/settings/audit-logs", anyOf: ["audit.read"] },
     ],

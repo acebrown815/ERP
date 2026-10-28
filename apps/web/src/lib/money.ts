@@ -76,3 +76,38 @@ export function sum(values: (string | null | undefined)[], scale = 18): string {
   const out = `${digits.slice(0, -scale)}.${digits.slice(-scale)}`.replace(/\.?0+$/, "");
   return `${negative ? "-" : ""}${out || "0"}`;
 }
+
+/** Move the decimal point: shiftDecimal("8", -2) = "0.08" (percent to rate), shiftDecimal("0.08", 2) = "8". Exact, no floats. */
+export function shiftDecimal(value: string, places: number): string {
+  const v = value.trim();
+  if (!isDecimal(v)) return v;
+  const neg = v.startsWith("-");
+  const [int = "0", frac = ""] = (neg ? v.slice(1) : v).split(".");
+  let digits = int + frac;
+  let point = int.length + places;
+  if (point < 0) {
+    digits = "0".repeat(-point) + digits;
+    point = 0;
+  }
+  if (point > digits.length) digits = digits.padEnd(point, "0");
+  const whole = digits.slice(0, point).replace(/^0+/, "") || "0";
+  const fraction = digits.slice(point).replace(/0+$/, "");
+  const out = fraction ? `${whole}.${fraction}` : whole;
+  return neg && out !== "0" ? `-${out}` : out;
+}
+
+/** Exact a − b for decimal strings. */
+export function subtract(a: string, b: string): string {
+  const t = b.trim();
+  return sum([a, t.startsWith("-") ? t.slice(1) : `-${t}`]);
+}
+
+/**
+ * Amount for lists and summaries: 2 decimals. Full precision stays in the data (and on detail pages).
+ * A tiny non-zero amount that would show as 0.00 (e.g. 0.00045 BTC) keeps the digits it needs.
+ */
+export function formatShort(value: string | null | undefined, precision = 18): string {
+  const short = formatAmount(value, 2);
+  if (!value || !/^-?0\.00$/.test(short) || sign(value) === 0) return short;
+  return formatAmount(value, precision).replace(/0+$/, "");
+}

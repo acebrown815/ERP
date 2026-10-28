@@ -105,9 +105,14 @@ async def test_split_must_cover_exactly_100_percent(admin, scenario) -> None:  #
     res = await admin.post(f"{PE}/{pe['id']}/submit", headers=idem())
     assert res.status_code == 422 and res.json()["errors"][0]["code"] == "incomplete"
 
-    none = (await admin.post(PE, json=await receipt_body(party_id=scenario["customer"]))).json()
+    # No split at all is allowed: the revenue simply counts toward nobody's salary.
+    unsplit = await receipt_body(party_id=scenario["customer"])
+    preview = (await admin.post(f"{PE}/preview", json=unsplit)).json()
+    assert preview["ok"] is True and preview["allocations"] == []
+    assert any("won't count toward anyone's salary" in w for w in preview["warnings"])
+    none = (await admin.post(PE, json=unsplit)).json()
     res = await admin.post(f"{PE}/{none['id']}/submit", headers=idem())
-    assert res.status_code == 422 and res.json()["errors"][0]["field"] == "allocations"
+    assert res.status_code == 200 and res.json()["allocations"] == []
 
     over = await admin.post(
         PE,
@@ -301,8 +306,8 @@ async def test_crypto_receipt_and_conversion_with_fx_gain(admin, scenario) -> No
         exchange_rate="0.999",
         method_category_id=await category_id("payment_method", "crypto_transfer"),
     )
-    missing_rate = (await admin.post(f"{PE}/preview", json={**receipt, "exchange_rate": "1"})).json()
-    assert missing_rate["ok"] is True  # 1 is an explicit rate; accepted
+    explicit_one = (await admin.post(f"{PE}/preview", json={**receipt, "exchange_rate": "1"})).json()
+    assert explicit_one["ok"] is True  # 1 typed on the entry is an explicit rate; accepted
     done = await create_and_submit(admin, receipt)
     assert done["currency"] == "USDT" and done["base_amount"] == "999.0000"
     assert {a["amount"] for a in done["allocations"]} == {"599.4000", "399.6000"}
@@ -333,6 +338,95 @@ async def test_crypto_receipt_and_conversion_with_fx_gain(admin, scenario) -> No
     accounts = {a["code"]: a for a in (await admin.get("/api/v1/accounts")).json()}
     assert D(accounts["1320"]["balance"]) == 0  # no units left and no value left
     assert D(accounts["4950"]["balance"]) == D("-0.50")  # income account: a loss shows negative
+
+
+async def test_category_required_fields_are_enforced(admin) -> None:  # type: ignore[no-untyped-def]
+    travel = (
+        await admin.post(
+            "/api/v1/categories",
+            json={
+                "group_key": "expense_category",
+                "name": "Travel",
+                "config": {"required_fields": ["reference_no", "description"]},
+            },
+        )
+    ).json()
+    body = {
+        "posting_date": "2026-11-12",
+        "direction": "pay",
+        "amount": "250",
+        "method_category_id": await category_id("payment_method", "bank_transfer"),
+        "purpose_category_id": await category_id("payment_purpose", "operating_expense"),
+        "category_id": travel["id"],
+        "counter_account_id": await account_id("5990"),
+        "paid_from_payment_account_id": await payment_account_id("Company Checking"),
+    }
+    missing = (await admin.post(f"{PE}/preview", json=body)).json()
+    assert missing["ok"] is False
+    assert {e["field"] for e in missing["errors"]} == {"reference_no", "description"}
+    done = (
+        await admin.post(f"{PE}/preview", json={**body, "reference_no": "TRIP-7", "description": "Client visit"})
+    ).json()
+    assert done["ok"] is True, done
+
+
+async def test_saved_rate_is_used_when_the_entry_has_none(admin, scenario) -> None:  # type: ignore[no-untyped-def]
+    usdt = await payment_account_id("USDT Wallet")
+    receipt = await receipt_body(
+        party_id=scenario["customer"],
+        project_id=scenario["project"],
+        amount="1000",
+        paid_to_payment_account_id=usdt,
+        method_category_id=await category_id("payment_method", "crypto_transfer"),
+    )
+    # No rate typed and none saved: never silently 1.0.
+    missing = (await admin.post(f"{PE}/preview", json=receipt)).json()
+    assert missing["ok"] is False and missing["errors"][0]["field"] == "exchange_rate"
+    assert "Currencies & Rates" in missing["errors"][0]["message"]
+
+    saved = await admin.put(
+        "/api/v1/exchange-rates",
+        json={"from_currency": "USDT", "to_currency": "USD", "rate_date": "2026-11-01", "rate": "0.95"},
+    )
+    assert saved.status_code == 200
+    preview = (await admin.post(f"{PE}/preview", json=receipt)).json()
+    assert preview["ok"] is True and preview["base_amount"] == "950.00" and D(preview["exchange_rate"]) == D("0.95")
+    assert any("saved USDT→USD rate 0.95" in w for w in preview["warnings"])
+
+    draft = (await admin.post(PE, json=receipt)).json()
+    assert draft["exchange_rate"] is None
+    done = (await admin.post(f"{PE}/{draft['id']}/submit", headers=idem())).json()
+    assert D(done["exchange_rate"]) == D("0.95") and done["base_amount"] == "950.0000"  # frozen on submit
+    # A later rate doesn't change a submitted payment, but does change the market value.
+    await admin.put(
+        "/api/v1/exchange-rates",
+        json={"from_currency": "USDT", "to_currency": "USD", "rate_date": "2026-11-20", "rate": "0.90"},
+    )
+    again = (await admin.get(f"{PE}/{done['id']}")).json()
+    assert again["base_amount"] == "950.0000"
+    # USDT is in the ledger now: its decimals can grow but not shrink.
+    assert (await admin.patch("/api/v1/currencies/USDT", json={"precision": 2})).status_code == 422
+    assert (await admin.patch("/api/v1/currencies/USDT", json={"precision": 8})).status_code == 200
+
+    holdings = (await admin.get("/api/v1/reports/holdings", params={"as_of": "2026-11-25"})).json()
+    usdt_row = next(c for c in holdings["currencies"] if c["currency"] == "USDT")
+    assert D(usdt_row["units"]) == 1000 and D(usdt_row["book_value"]) == 950
+    assert D(usdt_row["market_value"]) == 900 and D(usdt_row["rate"]) == D("0.90")
+    assert holdings["currencies"][0]["currency"] == "USD"  # base currency first
+    assert D(holdings["book_total"]) == 950 and D(holdings["market_total"]) == 900
+    btc = next(c for c in holdings["currencies"] if c["currency"] == "BTC")
+    assert btc["market_value"] is None  # no saved BTC rate
+    assert holdings["missing_rates"] == []  # ...but no BTC held either
+    csv = await admin.get("/api/v1/reports/holdings", params={"as_of": "2026-11-25", "format": "csv"})
+    assert csv.status_code == 200 and "USDT" in csv.text
+
+    # Chart of accounts: the wallet in USDT and at the saved rate; groups roll up the value at today's rates.
+    accounts = {x["code"]: x for x in (await admin.get("/api/v1/accounts", params={"as_of": "2026-11-25"})).json()}
+    wallet = accounts["1320"]
+    assert D(wallet["balance"]) == 950 and D(wallet["balance_in_currency"]) == 1000
+    assert D(wallet["rate"]) == D("0.90") and D(wallet["value_at_rate"]) == 900
+    assert D(accounts["1300"]["balance"]) == 950 and D(accounts["1300"]["value_at_rate"]) == 900
+    assert accounts["1110"]["balance_in_currency"] is None and accounts["1110"]["value_at_rate"] is None
 
 
 async def test_cancel_and_amend(admin, scenario) -> None:  # type: ignore[no-untyped-def]

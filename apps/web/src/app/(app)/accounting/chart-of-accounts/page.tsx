@@ -16,8 +16,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Checkbox, Input, Select, Textarea } from "@/components/ui/input";
 import { Badge, Card } from "@/components/ui/misc";
 import { api, ApiError } from "@/lib/api";
-import { formatAmount } from "@/lib/money";
-import { useAccounts, useCompany, useCurrencies } from "@/lib/queries";
+import { formatAmount, formatShort, sign } from "@/lib/money";
+import { currencyPrecision, useAccounts, useCompany, useCurrencies } from "@/lib/queries";
 import { useCan } from "@/lib/session";
 import type { Account } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -119,21 +119,40 @@ export default function ChartOfAccountsPage() {
   const company = useCompany();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [showInactive, setShowInactive] = useState(false);
+  const [currencyFilter, setCurrencyFilter] = useState("");
+  const currencies = useCurrencies();
   const [dialog, setDialog] = useState<{ account: Account | null; parentId: string | null } | null>(null);
   const [deleting, setDeleting] = useState<Account | null>(null);
   const base = company.data?.base_currency ?? "USD";
 
+  // Currencies in use, for the filter (base first).
+  const usedCurrencies = useMemo(() => {
+    const set = new Set((accounts.data ?? []).filter((a) => !a.is_group).map((a) => a.currency));
+    return [...set].sort((x, y) => (x === base ? -1 : y === base ? 1 : x.localeCompare(y)));
+  }, [accounts.data, base]);
+
   const visible = useMemo(() => {
     const rows = accounts.data ?? [];
+    // With a currency chosen: its accounts plus the groups above them.
+    let keep: Set<string> | null = null;
+    if (currencyFilter) {
+      const byId = new Map(rows.map((a) => [a.id, a]));
+      keep = new Set();
+      for (const a of rows) {
+        if (a.is_group || a.currency !== currencyFilter) continue;
+        for (let cur: Account | undefined = a; cur && !keep.has(cur.id); cur = cur.parent_id ? byId.get(cur.parent_id) : undefined) keep.add(cur.id);
+      }
+    }
     const hidden = new Set<string>();
     return rows.filter((a) => {
+      if (keep && !keep.has(a.id)) return false;
       if (a.parent_id && (hidden.has(a.parent_id) || collapsed.has(a.parent_id))) {
         hidden.add(a.id);
         return false;
       }
       return showInactive || a.is_active;
     });
-  }, [accounts.data, collapsed, showInactive]);
+  }, [accounts.data, collapsed, showInactive, currencyFilter]);
 
   const toggleActive = useMutation({
     mutationFn: (a: Account) => api.post<Account>(`/accounts/${a.id}/${a.is_active ? "deactivate" : "activate"}`),
@@ -147,7 +166,7 @@ export default function ChartOfAccountsPage() {
     <>
       <PageHeader
         title="Chart of accounts"
-        description={`Balances in ${base}, from posted ledger entries. Groups show the total of their sub-accounts.`}
+        description={`From posted ledger entries. Accounts in another currency (e.g. a USDT wallet) also show their balance in that currency and its value at the latest saved rate; "Recorded" is the ${base} value the books hold. Groups total their sub-accounts.`}
         actions={manage && <Button onClick={() => setDialog({ account: null, parentId: null })}><Plus /> New account</Button>}
       />
       <Card>
@@ -158,9 +177,15 @@ export default function ChartOfAccountsPage() {
               Collapse all
             </Button>
           </div>
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Checkbox checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} /> Show inactive
-          </label>
+          <div className="flex items-center gap-4">
+            <Select aria-label="Currency" className="h-8 w-auto" value={currencyFilter} onChange={(e) => setCurrencyFilter(e.target.value)}>
+              <option value="">All currencies</option>
+              {usedCurrencies.map((c) => <option key={c} value={c}>{c}</option>)}
+            </Select>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Checkbox checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} /> Show inactive
+            </label>
+          </div>
         </div>
         {accounts.isLoading ? <TableSkeleton rows={12} /> : (
           <div className="overflow-x-auto">
@@ -169,7 +194,9 @@ export default function ChartOfAccountsPage() {
                 <tr>
                   <th className="h-10 px-3 text-left font-medium">Account</th>
                   <th className="hidden h-10 px-3 text-left font-medium md:table-cell">Type</th>
-                  <th className="h-10 px-3 text-right font-medium">Balance</th>
+                  <th className="h-10 px-3 text-right font-medium">In own currency</th>
+                  <th className="h-10 px-3 text-right font-medium">At today&apos;s rate ({base})</th>
+                  <th className="h-10 px-3 text-right font-medium">Recorded ({base})</th>
                   <th className="w-12" />
                 </tr>
               </thead>
@@ -193,8 +220,26 @@ export default function ChartOfAccountsPage() {
                         </div>
                       </td>
                       <td className="hidden px-3 py-2 text-muted-foreground md:table-cell">{a.is_group ? "Group" : a.account_type.replace("_", " ")}</td>
-                      <td className={cn("tabular px-3 py-2 text-right", Number(a.balance) < 0 && "text-destructive")}>
-                        {Number(a.balance) || a.has_postings ? formatAmount(a.balance) : ""}
+                      <td className="tabular px-3 py-2 text-right">
+                        {a.balance_in_currency != null ? (
+                          <span className={cn(sign(a.balance_in_currency) < 0 && "text-destructive")}>
+                            {formatShort(a.balance_in_currency, currencyPrecision(currencies.data, a.currency))} {a.currency}
+                          </span>
+                        ) : ""}
+                      </td>
+                      <td className="tabular px-3 py-2 text-right">
+                        {a.value_at_rate != null ? (
+                          <span title={a.rate ? `Rate ${formatAmount(a.rate, 4)}` : undefined} className={cn(sign(a.value_at_rate) < 0 && "text-destructive")}>
+                            {formatAmount(a.value_at_rate)}
+                          </span>
+                        ) : a.balance_in_currency != null ? (
+                          <span className="text-xs text-warning">no saved rate</span>
+                        ) : sign(a.balance) || a.has_postings ? (
+                          <span className={cn(sign(a.balance) < 0 && "text-destructive")}>{formatAmount(a.balance)}</span>
+                        ) : ""}
+                      </td>
+                      <td className={cn("tabular px-3 py-2 text-right text-muted-foreground", sign(a.balance) < 0 && "text-destructive")}>
+                        {sign(a.balance) || a.has_postings ? formatAmount(a.balance) : ""}
                       </td>
                       <td className="px-1 py-1 text-right">
                         {manage && (

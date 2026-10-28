@@ -36,6 +36,4 @@ class RevenueAllocation(UUIDPk, Base):
     amount_base: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
     status: Mapped[str] = mapped_column(String(10), default="draft")
     attribution_date: Mapped[date | None]
-    # Salary period this revenue counts toward (assigned from Phase 3).
-    salary_period_id: Mapped[uuid.UUID | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

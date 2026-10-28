@@ -11,12 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import lookup
 from app.core.csv_export import csv_response
 from app.core.db import get_session
-from app.core.errors import Conflict, ValidationFailed, field_error
+from app.core.errors import Conflict, NotFound, ValidationFailed, field_error
 from app.core.idempotency import run_idempotent
+from app.core.money import quantize
 from app.core.pagination import Page, PageParams, page_params, paginate
 from app.modules.accounting import reports, service
 from app.modules.accounting.models import ACCOUNT_TYPES, Account, JournalEntry, JournalLine
 from app.modules.auth.api import CurrentUser, require, require_any
+from app.modules.settings import api as settings
 
 router = APIRouter(tags=["accounting"])
 
@@ -42,8 +44,13 @@ class AccountOut(BaseModel):
     system_key: str | None
     version: int
     depth: int = 0
-    balance: Decimal = Decimal(0)
+    balance: Decimal = Decimal(0)  # base currency, as recorded
     has_postings: bool = False
+    # Accounts in another currency (USDT wallet, EUR bank...): balance in that currency and its value at
+    # the saved rate on the date. Groups get the rolled-up value at today's rates. Display only.
+    balance_in_currency: Decimal | None = None
+    rate: Decimal | None = None
+    value_at_rate: Decimal | None = None
 
 
 class AccountCreateIn(BaseModel):
@@ -173,24 +180,54 @@ async def list_accounts(
     raw = await service.balances(session, date_to=as_of)
     by_id = {a.id: a for a in accounts}
     totals: dict[uuid.UUID, Decimal] = {}
+    base = await settings.base_currency(session)
+    foreign = [a for a in accounts if not a.is_group and a.currency != base.code and a.id in raw]
+    units = await service.unit_balances(session, account_ids=[a.id for a in foreign], date_to=as_of)
+    on = as_of or await settings.today(session)
+    rates: dict[str, Decimal | None] = {}
+    for code in {a.currency for a in foreign}:
+        try:
+            rates[code] = (await settings.lookup_rate(session, code, base.code, on))[0]
+        except NotFound:
+            rates[code] = None
+
+    totals: dict[uuid.UUID, Decimal] = {}
+    valued: dict[uuid.UUID, Decimal] = {}  # at today's rates; book value where there is no rate
+    own: dict[uuid.UUID, tuple[Decimal, Decimal | None, Decimal | None]] = {}
     for acc_id, (d, c) in raw.items():  # roll each leaf balance up to every ancestor
         leaf = by_id.get(acc_id)
         if leaf is None:
             continue
         amount = reports.signed(leaf.root_type, d, c)
+        value = amount
+        if acc_id in units:
+            n = units[acc_id] if leaf.root_type in reports.DEBIT_NORMAL else -units[acc_id]
+            rate = rates.get(leaf.currency)
+            at_rate = quantize(n * rate, base.precision) if rate is not None else None
+            own[acc_id] = (n, rate, at_rate)
+            value = at_rate if at_rate is not None else amount
         for hexid in leaf.path.strip("/").split("/"):
             key = uuid.UUID(hexid)
             totals[key] = totals.get(key, Decimal(0)) + amount
-    return [
-        AccountOut.model_validate(a).model_copy(
-            update={
-                "depth": a.path.count("/") - 2,
-                "balance": totals.get(a.id, Decimal(0)),
-                "has_postings": a.id in raw,
-            }
+            valued[key] = valued.get(key, Decimal(0)) + value
+    out = []
+    for a in service.tree_order(accounts):
+        n, rate, at_rate = own.get(a.id, (None, None, None))
+        if a.is_group and valued.get(a.id, Decimal(0)) != totals.get(a.id, Decimal(0)):
+            at_rate = valued[a.id]
+        out.append(
+            AccountOut.model_validate(a).model_copy(
+                update={
+                    "depth": a.path.count("/") - 2,
+                    "balance": totals.get(a.id, Decimal(0)),
+                    "has_postings": a.id in raw,
+                    "balance_in_currency": n,
+                    "rate": rate,
+                    "value_at_rate": at_rate,
+                }
+            )
         )
-        for a in service.tree_order(accounts)
-    ]
+    return out
 
 
 @router.post("/accounts", response_model=AccountOut, status_code=201)
@@ -663,6 +700,96 @@ async def profit_and_loss(
         lines += [("", "Total expenses", te, ""), ("", "Net profit", ti - te, "")]
         return csv_response(f"profit-and-loss_{date_from}_{date_to}.csv", ["code", "account", "amount", ""], lines)
     return out
+
+
+class HoldingOut(BaseModel):
+    account_id: uuid.UUID
+    code: str
+    name: str
+    account_type: str
+    currency: str
+    units: Decimal
+    book_value: Decimal
+    rate: Decimal | None
+    rate_date: date | None
+    market_value: Decimal | None
+
+
+class CurrencyHoldingOut(BaseModel):
+    currency: str
+    units: Decimal
+    book_value: Decimal
+    rate: Decimal | None
+    rate_date: date | None
+    market_value: Decimal | None  # None when no saved rate exists for the currency
+    accounts: list[HoldingOut]
+
+
+class HoldingsOut(BaseModel):
+    as_of: date
+    base_currency: str
+    currencies: list[CurrencyHoldingOut]
+    book_total: Decimal
+    market_total: Decimal  # currencies without a rate count at book value
+    missing_rates: list[str]
+
+
+@router.get("/reports/holdings", response_model=HoldingsOut)
+async def holdings(
+    as_of: date | None = None,
+    format: Format = "json",
+    _: CurrentUser = Report,
+    session: AsyncSession = Depends(get_session),
+) -> Any:
+    """Cash, bank, wallets and cards grouped by currency: units held, recorded (book) value, and value at
+    the saved exchange rate on `as_of` (default today). Display only; nothing is posted."""
+    as_of = as_of or await settings.today(session)
+    base = await settings.base_currency(session)
+    rows = await reports.holdings(session, as_of)
+    groups: dict[str, list[reports.Holding]] = {}
+    for h in rows:
+        groups.setdefault(h.currency, []).append(h)
+    currencies = []
+    for code, items in groups.items():
+        units = sum((h.units for h in items), Decimal(0))
+        book = sum((h.book_value for h in items), Decimal(0))
+        first = items[0]
+        currencies.append(
+            CurrencyHoldingOut(
+                currency=code,
+                units=units,
+                book_value=book,
+                rate=first.rate,
+                rate_date=first.rate_date,
+                market_value=sum((h.market_value or Decimal(0) for h in items), Decimal(0))
+                if first.rate is not None
+                else None,
+                accounts=[HoldingOut(**vars(h)) for h in items],
+            )
+        )
+    # Base currency first, then by value.
+    currencies.sort(key=lambda c: (c.currency != base.code, -(c.market_value or c.book_value)))
+    book_total = sum((c.book_value for c in currencies), Decimal(0))
+    market_total = sum((c.market_value if c.market_value is not None else c.book_value for c in currencies), Decimal(0))
+    missing = [c.currency for c in currencies if c.market_value is None and c.units]
+    if format == "csv":
+        return csv_response(
+            f"holdings_{as_of}.csv",
+            ["currency", "account", "units", "book_value", "rate", "rate_date", "market_value"],
+            [
+                (c.currency, f"{h.code} {h.name}", h.units, h.book_value, h.rate, h.rate_date, h.market_value)
+                for c in currencies
+                for h in c.accounts
+            ],
+        )
+    return HoldingsOut(
+        as_of=as_of,
+        base_currency=base.code,
+        currencies=currencies,
+        book_total=book_total,
+        market_total=market_total,
+        missing_rates=missing,
+    )
 
 
 @router.get("/reports/balance-sheet", response_model=BalanceSheetOut)

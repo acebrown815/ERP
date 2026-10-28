@@ -1,9 +1,21 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 
 import { PageHeader } from "@/components/erp/page-header";
-import { PaymentEntryEditor } from "@/components/payments/entry-editor";
+import { PaymentEntryEditor, type SalaryPrefill } from "@/components/payments/entry-editor";
+
+function Editor() {
+  // ?salary_employee=<id>&amount=<owed>&period=<salary period id>, from the salary board's "Pay".
+  const params = useSearchParams();
+  const employeeId = params.get("salary_employee");
+  const salary: SalaryPrefill | undefined = employeeId
+    ? { employeeId, amount: params.get("amount") ?? undefined, periodId: params.get("period") ?? undefined }
+    : undefined;
+  return <PaymentEntryEditor salary={salary} />;
+}
 
 export default function NewPaymentEntryPage() {
   return (
@@ -16,7 +28,9 @@ export default function NewPaymentEntryPage() {
           </>
         }
       />
-      <PaymentEntryEditor />
+      <Suspense>
+        <Editor />
+      </Suspense>
     </>
   );
 }

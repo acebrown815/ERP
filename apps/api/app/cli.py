@@ -53,6 +53,7 @@ async def seed_all(session: Any, company: str) -> dict[str, int]:
     """Idempotent: creates whatever is missing, never overwrites existing data."""
     from app.modules.accounting import api as accounting
     from app.modules.categories import api as categories
+    from app.modules.compensation import api as compensation
     from app.modules.payments import api as payments
     from app.modules.rbac import api as rbac
     from app.modules.settings import api as settings
@@ -62,6 +63,7 @@ async def seed_all(session: Any, company: str) -> dict[str, int]:
     created = {"categories": await categories.seed(session)}
     created["accounts"] = await accounting.seed(session)
     created["payment_accounts"] = await payments.seed_payment_accounts(session)
+    await compensation.seed(session)
     return created
 
 
@@ -205,6 +207,26 @@ async def demo_business() -> None:
     print("created demo business data: Customer ABC, Employees A and B, project, receipt, expense")
 
 
+async def demo_salary() -> None:
+    """Put the demo employees on the default salary formula (idempotent)."""
+    from app.modules.compensation import api as compensation
+    from app.modules.employees import api as employees
+
+    async with SessionLocal() as s:
+        formula = await compensation.default_formula(s)
+        assert formula is not None, "run seed first"
+        added = 0
+        for email in ("alice@example.com", "bob@example.com"):
+            employee = await employees.find_by_email(s, email)
+            if employee and not await compensation.list_assignments(s, employee_id=employee.id):
+                await compensation.create_assignment(
+                    s, actor_id=None, employee_id=employee.id, formula_id=formula.id, effective_from=employee.start_date
+                )
+                added += 1
+        await s.commit()
+    print(f"demo salary formula assignments: +{added}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -234,6 +256,7 @@ def main(argv: list[str] | None = None) -> int:
             for email, name, role in DEMO_USERS:
                 await create_user(email, name, DEMO_PASSWORD, role)
             await demo_business()
+            await demo_salary()
 
         _run(_demo())
         print(f"demo password for all demo users: {DEMO_PASSWORD}")

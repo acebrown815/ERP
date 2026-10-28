@@ -752,6 +752,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/reports/holdings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Holdings
+         * @description Cash, bank, wallets and cards grouped by currency: units held, recorded (book) value, and value at
+         *     the saved exchange rate on `as_of` (default today). Display only; nothing is posted.
+         */
+        get: operations["holdings_api_v1_reports_holdings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/reports/balance-sheet": {
         parameters: {
             query?: never;
@@ -1223,6 +1244,367 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/comp-formulas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Formulas */
+        get: operations["list_formulas_api_v1_comp_formulas_get"];
+        put?: never;
+        /** Create Formula */
+        post: operations["create_formula_api_v1_comp_formulas_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/comp-formulas/{formula_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Formula */
+        get: operations["get_formula_api_v1_comp_formulas__formula_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Formula */
+        patch: operations["update_formula_api_v1_comp_formulas__formula_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/comp-formulas/{formula_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Version */
+        post: operations["add_version_api_v1_comp_formulas__formula_id__versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/comp-formula-versions/{version_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Version */
+        delete: operations["delete_version_api_v1_comp_formula_versions__version_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/comp-formulas/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview
+         * @description Salary at sample revenues, plus evenly spaced points for the rate/salary chart.
+         */
+        post: operations["preview_api_v1_comp_formulas_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/comp-assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Assignments */
+        get: operations["list_assignments_api_v1_comp_assignments_get"];
+        put?: never;
+        /** Create Assignment */
+        post: operations["create_assignment_api_v1_comp_assignments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/comp-assignments/{assignment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Assignment */
+        delete: operations["delete_assignment_api_v1_comp_assignments__assignment_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Assignment */
+        patch: operations["update_assignment_api_v1_comp_assignments__assignment_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/salary-periods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Periods */
+        get: operations["list_periods_api_v1_salary_periods_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/salary-periods/{period_id}/statements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Board
+         * @description One row per employee: revenue, formula, calculated, paid (oldest-first matching) and balance.
+         */
+        get: operations["board_api_v1_salary_periods__period_id__statements_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/salary-periods/{period_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close Period */
+        post: operations["close_period_api_v1_salary_periods__period_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/salary-periods/{period_id}/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reopen Period */
+        post: operations["reopen_period_api_v1_salary_periods__period_id__reopen_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/salary-periods/{period_id}/adjustments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Adjustments */
+        get: operations["list_adjustments_api_v1_salary_periods__period_id__adjustments_get"];
+        put?: never;
+        /** Add Adjustment */
+        post: operations["add_adjustment_api_v1_salary_periods__period_id__adjustments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/salary-adjustments/{adjustment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Adjustment */
+        delete: operations["delete_adjustment_api_v1_salary_adjustments__adjustment_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employees/{employee_id}/salary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Employee Salary */
+        get: operations["employee_salary_api_v1_employees__employee_id__salary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/salary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Salary */
+        get: operations["my_salary_api_v1_me_salary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employees/{employee_id}/revenue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Employee Revenue
+         * @description The payments behind an employee's revenue in one salary period (default: the current one).
+         */
+        get: operations["employee_revenue_api_v1_employees__employee_id__revenue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/salary-cycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Cycle */
+        get: operations["get_cycle_api_v1_settings_salary_cycle_get"];
+        /** Set Cycle */
+        put: operations["set_cycle_api_v1_settings_salary_cycle_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/salary-cycle/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Cycle */
+        post: operations["preview_cycle_api_v1_settings_salary_cycle_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/employee-revenue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Revenue Report
+         * @description Attributed revenue per employee per salary period.
+         */
+        get: operations["revenue_report_api_v1_reports_employee_revenue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/employee-salary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Salary Report
+         * @description Revenue, calculated and paid salary per employee per period, with today's balance.
+         */
+        get: operations["salary_report_api_v1_reports_employee_salary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -1311,6 +1693,12 @@ export interface components {
              * @default false
              */
             has_postings: boolean;
+            /** Balance In Currency */
+            balance_in_currency?: string | null;
+            /** Rate */
+            rate?: string | null;
+            /** Value At Rate */
+            value_at_rate?: string | null;
         };
         /** AccountUpdateIn */
         AccountUpdateIn: {
@@ -1331,6 +1719,52 @@ export interface components {
             /** Description */
             description?: string | null;
         };
+        /** AdjustmentIn */
+        AdjustmentIn: {
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "bonus" | "deduction" | "correction";
+            /** Amount */
+            amount: number | string;
+            /** Reason */
+            reason: string;
+        };
+        /** AdjustmentOut */
+        AdjustmentOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Salary Period Id
+             * Format: uuid
+             */
+            salary_period_id: string;
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /** Kind */
+            kind: string;
+            /** Amount */
+            amount: string;
+            /** Reason */
+            reason: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** AllocationOut */
         AllocationOut: {
             /**
@@ -1350,6 +1784,75 @@ export interface components {
             amount: string | null;
             /** Status */
             status: string;
+        };
+        /** AssignmentCreateIn */
+        AssignmentCreateIn: {
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /**
+             * Formula Id
+             * Format: uuid
+             */
+            formula_id: string;
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Effective To */
+            effective_to?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /**
+             * End Previous
+             * @default true
+             */
+            end_previous: boolean;
+        };
+        /** AssignmentOut */
+        AssignmentOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /**
+             * Formula Id
+             * Format: uuid
+             */
+            formula_id: string;
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Effective To */
+            effective_to: string | null;
+            /** Notes */
+            notes: string | null;
+            /** Version */
+            version: number;
+            /** Employee Name */
+            employee_name?: string | null;
+            /** Formula Name */
+            formula_name?: string | null;
+        };
+        /** AssignmentUpdateIn */
+        AssignmentUpdateIn: {
+            /** Version */
+            version: number;
+            /** Effective To */
+            effective_to?: string | null;
+            /** Notes */
+            notes?: string | null;
         };
         /** AttachmentOut */
         AttachmentOut: {
@@ -1436,6 +1939,77 @@ export interface components {
             total_equity: string;
             /** Balanced */
             balanced: boolean;
+        };
+        /** BoardOut */
+        BoardOut: {
+            period: components["schemas"]["SalaryPeriodOut"];
+            /** Rows */
+            rows: components["schemas"]["BoardRow"][];
+            /** Total Revenue */
+            total_revenue: string;
+            /** Total Calculated */
+            total_calculated: string;
+            /** Total Paid */
+            total_paid: string;
+            /** Can Close */
+            can_close: boolean;
+            /** Close Blocker */
+            close_blocker: string | null;
+        };
+        /** BoardRow */
+        BoardRow: {
+            /**
+             * Period Id
+             * Format: uuid
+             */
+            period_id: string;
+            /** Period Label */
+            period_label: string;
+            /**
+             * Period Start
+             * Format: date
+             */
+            period_start: string;
+            /**
+             * Period End
+             * Format: date
+             */
+            period_end: string;
+            /** Period Status */
+            period_status: string;
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /** Employee Name */
+            employee_name: string;
+            /** Revenue */
+            revenue: string;
+            /** Formula Id */
+            formula_id: string | null;
+            /** Formula Name */
+            formula_name: string | null;
+            /** Formula Version No */
+            formula_version_no: number | null;
+            /** Rate */
+            rate: string;
+            /** Formula Amount */
+            formula_amount: string;
+            /** Adjustments Total */
+            adjustments_total: string;
+            /** Calculated */
+            calculated: string;
+            /** Paid */
+            paid: string;
+            /** Status */
+            status: string;
+            /** Frozen */
+            frozen: boolean;
+            /** Components */
+            components: components["schemas"]["SalaryComponent"][];
+            /** Balance */
+            balance: string;
         };
         /** Body_run_import_api_v1_imports__entity__post */
         Body_run_import_api_v1_imports__entity__post: {
@@ -1624,8 +2198,6 @@ export interface components {
             timezone?: string | null;
             /** Fiscal Year Start Month */
             fiscal_year_start_month?: number | null;
-            /** Salary Cycle Start Day */
-            salary_cycle_start_day?: number | null;
             /** Policies */
             policies?: {
                 [key: string]: string;
@@ -1646,6 +2218,23 @@ export interface components {
              * @default false
              */
             is_crypto: boolean;
+        };
+        /** CurrencyHoldingOut */
+        CurrencyHoldingOut: {
+            /** Currency */
+            currency: string;
+            /** Units */
+            units: string;
+            /** Book Value */
+            book_value: string;
+            /** Rate */
+            rate: string | null;
+            /** Rate Date */
+            rate_date: string | null;
+            /** Market Value */
+            market_value: string | null;
+            /** Accounts */
+            accounts: components["schemas"]["HoldingOut"][];
         };
         /** CurrencyOut */
         CurrencyOut: {
@@ -1672,6 +2261,30 @@ export interface components {
             precision?: number | null;
             /** Is Active */
             is_active?: boolean | null;
+        };
+        /** CurvePoint */
+        CurvePoint: {
+            /** Revenue */
+            revenue: string;
+            /** Rate */
+            rate: string;
+        };
+        /** CycleIn */
+        CycleIn: {
+            /** Salary Cycle Start Day */
+            salary_cycle_start_day: number;
+        };
+        /** CycleOut */
+        CycleOut: {
+            /** Salary Cycle Start Day */
+            salary_cycle_start_day: number;
+            current: components["schemas"]["SpanOut"] | null;
+            /** Upcoming */
+            upcoming: components["schemas"]["SpanOut"][];
+            /** Replaces All */
+            replaces_all: boolean;
+            /** Blockers */
+            blockers: string[];
         };
         /** DepartmentIn */
         DepartmentIn: {
@@ -1781,6 +2394,47 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** EmployeeRevenueOut */
+        EmployeeRevenueOut: {
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /** Employee Name */
+            employee_name: string;
+            period: components["schemas"]["SalaryPeriodOut"];
+            /** Total */
+            total: string;
+            /** By Project */
+            by_project: components["schemas"]["ProjectRevenue"][];
+            /** Allocations */
+            allocations: components["schemas"]["RevenueAllocationOut"][];
+        };
+        /** EmployeeSalaryOut */
+        EmployeeSalaryOut: {
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /** Employee Name */
+            employee_name: string;
+            /** Calculated Total */
+            calculated_total: string;
+            /** Paid Total */
+            paid_total: string;
+            /** Balance */
+            balance: string;
+            /** Credit */
+            credit: string;
+            formula: components["schemas"]["FormulaRef"] | null;
+            current: components["schemas"]["StatementOut"] | null;
+            /** Statements */
+            statements: components["schemas"]["StatementOut"][];
+            /** Payments */
+            payments: components["schemas"]["SalaryPaymentOut"][];
+        };
         /** EmployeeUpdateIn */
         EmployeeUpdateIn: {
             /** Version */
@@ -1846,11 +2500,8 @@ export interface components {
             counter_account_id?: string | null;
             /** Amount */
             amount: number | string;
-            /**
-             * Exchange Rate
-             * @default 1
-             */
-            exchange_rate: number | string;
+            /** Exchange Rate */
+            exchange_rate?: number | string | null;
             /** Received Amount */
             received_amount?: number | string | null;
             /** Received Exchange Rate */
@@ -1870,6 +2521,8 @@ export interface components {
             project_id?: string | null;
             /** Employee Id */
             employee_id?: string | null;
+            /** Salary Period Id */
+            salary_period_id?: string | null;
             /** Reference No */
             reference_no?: string | null;
             /** Description */
@@ -1920,7 +2573,7 @@ export interface components {
             /** Currency */
             currency: string;
             /** Exchange Rate */
-            exchange_rate: string;
+            exchange_rate: string | null;
             /** Received Amount */
             received_amount: string | null;
             /** Received Currency */
@@ -1939,6 +2592,8 @@ export interface components {
             project_id: string | null;
             /** Employee Id */
             employee_id: string | null;
+            /** Salary Period Id */
+            salary_period_id: string | null;
             /** Reference No */
             reference_no: string | null;
             /** Description */
@@ -1972,6 +2627,10 @@ export interface components {
             party_name?: string | null;
             /** Project Name */
             project_name?: string | null;
+            /** Employee Name */
+            employee_name?: string | null;
+            /** Salary Period Label */
+            salary_period_label?: string | null;
             /**
              * Allocations
              * @default []
@@ -2022,12 +2681,200 @@ export interface components {
             project_id?: string | null;
             /** Employee Id */
             employee_id?: string | null;
+            /** Salary Period Id */
+            salary_period_id?: string | null;
             /** Reference No */
             reference_no?: string | null;
             /** Description */
             description?: string | null;
             /** Allocations */
             allocations?: components["schemas"]["SplitRow-Input"][] | null;
+        };
+        /** FormulaCreateIn */
+        FormulaCreateIn: {
+            /** Name */
+            name: string;
+            /** Compensation Type Category Id */
+            compensation_type_category_id?: string | null;
+            /** Compensation Type Other Text */
+            compensation_type_other_text?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Definition */
+            definition: {
+                [key: string]: unknown;
+            };
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+        };
+        /** FormulaDefinition */
+        FormulaDefinition: {
+            rate_schedule: components["schemas"]["RateSchedule"];
+            /**
+             * Fixed Amount
+             * @default 0
+             */
+            fixed_amount: string;
+            /**
+             * Bonuses
+             * @default []
+             */
+            bonuses: components["schemas"]["RuleBonus"][];
+            /** Min Payout */
+            min_payout?: string | null;
+            /** Max Payout */
+            max_payout?: string | null;
+            /**
+             * @default {
+             *       "mode": "half_up",
+             *       "precision": 2
+             *     }
+             */
+            rounding: components["schemas"]["RoundingRule"];
+        };
+        /** FormulaDetailOut */
+        FormulaDetailOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Compensation Type Category Id */
+            compensation_type_category_id: string | null;
+            /** Compensation Type Other Text */
+            compensation_type_other_text: string | null;
+            /** Description */
+            description: string | null;
+            /** Is Active */
+            is_active: boolean;
+            /** Version */
+            version: number;
+            current?: components["schemas"]["FormulaVersionOut"] | null;
+            /**
+             * Employees Assigned
+             * @default 0
+             */
+            employees_assigned: number;
+            /** Versions */
+            versions: components["schemas"]["FormulaVersionOut"][];
+            /** Assignments */
+            assignments: components["schemas"]["AssignmentOut"][];
+        };
+        /** FormulaOut */
+        FormulaOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Compensation Type Category Id */
+            compensation_type_category_id: string | null;
+            /** Compensation Type Other Text */
+            compensation_type_other_text: string | null;
+            /** Description */
+            description: string | null;
+            /** Is Active */
+            is_active: boolean;
+            /** Version */
+            version: number;
+            current?: components["schemas"]["FormulaVersionOut"] | null;
+            /**
+             * Employees Assigned
+             * @default 0
+             */
+            employees_assigned: number;
+        };
+        /** FormulaPreviewIn */
+        FormulaPreviewIn: {
+            /** Definition */
+            definition: {
+                [key: string]: unknown;
+            };
+            /** Revenues */
+            revenues?: (number | string)[];
+            /** Chart Max */
+            chart_max?: number | string | null;
+        };
+        /** FormulaPreviewOut */
+        FormulaPreviewOut: {
+            /** Rows */
+            rows: components["schemas"]["FormulaPreviewRow"][];
+            /** Chart */
+            chart: components["schemas"]["FormulaPreviewRow"][];
+        };
+        /** FormulaPreviewRow */
+        FormulaPreviewRow: {
+            /** Revenue */
+            revenue: string;
+            /** Rate */
+            rate: string;
+            /** Amount */
+            amount: string;
+        };
+        /** FormulaRef */
+        FormulaRef: {
+            /**
+             * Formula Id
+             * Format: uuid
+             */
+            formula_id: string;
+            /** Formula Name */
+            formula_name: string;
+            /** Version No */
+            version_no: number;
+            definition: components["schemas"]["FormulaDefinition"];
+        };
+        /** FormulaUpdateIn */
+        FormulaUpdateIn: {
+            /** Version */
+            version: number;
+            /** Name */
+            name?: string | null;
+            /** Compensation Type Category Id */
+            compensation_type_category_id?: string | null;
+            /** Compensation Type Other Text */
+            compensation_type_other_text?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Is Active */
+            is_active?: boolean | null;
+        };
+        /** FormulaVersionOut */
+        FormulaVersionOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Formula Id
+             * Format: uuid
+             */
+            formula_id: string;
+            /** Version No */
+            version_no: number;
+            definition: components["schemas"]["FormulaDefinition"];
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Notes */
+            notes: string | null;
+            /** Is Locked */
+            is_locked: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** GroupOut */
         GroupOut: {
@@ -2047,11 +2894,63 @@ export interface components {
             config_schema: {
                 [key: string]: string;
             };
+            /** Config Choices */
+            config_choices: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
+            /** System Locked */
+            system_locked: string[];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HoldingOut */
+        HoldingOut: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Account Type */
+            account_type: string;
+            /** Currency */
+            currency: string;
+            /** Units */
+            units: string;
+            /** Book Value */
+            book_value: string;
+            /** Rate */
+            rate: string | null;
+            /** Rate Date */
+            rate_date: string | null;
+            /** Market Value */
+            market_value: string | null;
+        };
+        /** HoldingsOut */
+        HoldingsOut: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Base Currency */
+            base_currency: string;
+            /** Currencies */
+            currencies: components["schemas"]["CurrencyHoldingOut"][];
+            /** Book Total */
+            book_total: string;
+            /** Market Total */
+            market_total: string;
+            /** Missing Rates */
+            missing_rates: string[];
         };
         /** JournalIn */
         JournalIn: {
@@ -2701,6 +3600,10 @@ export interface components {
             base_amount?: string | null;
             /** Eligible Amount Base */
             eligible_amount_base?: string | null;
+            /** Exchange Rate */
+            exchange_rate?: string | null;
+            /** Received Exchange Rate */
+            received_exchange_rate?: string | null;
             /**
              * Allocations
              * @default []
@@ -2849,6 +3752,17 @@ export interface components {
              */
             members: components["schemas"]["MemberOut"][];
         };
+        /** ProjectRevenue */
+        ProjectRevenue: {
+            /** Project Id */
+            project_id: string | null;
+            /** Project Name */
+            project_name: string | null;
+            /** Revenue */
+            revenue: string;
+            /** Payments */
+            payments: number;
+        };
         /** ProjectUpdateIn */
         ProjectUpdateIn: {
             /** Version */
@@ -2929,10 +3843,125 @@ export interface components {
             /** Source */
             source: string;
         };
+        /**
+         * RateSchedule
+         * @description How the revenue share is computed.
+         *
+         *     - none: no revenue share (fixed salary only)
+         *     - linear_curve: straight lines between points, whole revenue at the resulting rate; holds the last
+         *       rate above the last point; below the first point either nothing or the first rate
+         *     - flat_tiers: the tier containing the revenue sets the rate for the whole revenue
+         *     - progressive_tiers: each slice of revenue at its own tier's rate (like tax bands)
+         */
+        RateSchedule: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "none" | "linear_curve" | "flat_tiers" | "progressive_tiers";
+            /**
+             * Below First Point
+             * @default zero
+             * @enum {string}
+             */
+            below_first_point: "zero" | "first_rate";
+            /**
+             * Points
+             * @default []
+             */
+            points: components["schemas"]["CurvePoint"][];
+            /**
+             * Tiers
+             * @default []
+             */
+            tiers: components["schemas"]["RateTier"][];
+        };
+        /** RateTier */
+        RateTier: {
+            /** From Revenue */
+            from_revenue: string;
+            /** Rate */
+            rate: string;
+        };
         /** ReconcileIn */
         ReconcileIn: {
             /** Reconciled */
             reconciled: boolean;
+        };
+        /** ReopenIn */
+        ReopenIn: {
+            /** Reason */
+            reason: string;
+        };
+        /** ReportPeriod */
+        ReportPeriod: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /**
+             * End Date
+             * Format: date
+             */
+            end_date: string;
+            /** Status */
+            status: string;
+        };
+        /** RevenueAllocationOut */
+        RevenueAllocationOut: {
+            /**
+             * Payment Entry Id
+             * Format: uuid
+             */
+            payment_entry_id: string;
+            /** Payment Number */
+            payment_number: string | null;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Project Id */
+            project_id: string | null;
+            /** Project Name */
+            project_name: string | null;
+            /** Percent */
+            percent: string | null;
+            /** Amount */
+            amount: string;
+        };
+        /** RevenueReportOut */
+        RevenueReportOut: {
+            /** Periods */
+            periods: components["schemas"]["ReportPeriod"][];
+            /** Rows */
+            rows: components["schemas"]["RevenueReportRow"][];
+            /** Totals */
+            totals: string[];
+            /** Total */
+            total: string;
+        };
+        /** RevenueReportRow */
+        RevenueReportRow: {
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /** Employee Name */
+            employee_name: string;
+            /** By Period */
+            by_period: string[];
+            /** Total */
+            total: string;
         };
         /** ReverseIn */
         ReverseIn: {
@@ -3002,10 +4031,158 @@ export interface components {
                 [key: string]: string;
             } | null;
         };
+        /** RoundingRule */
+        RoundingRule: {
+            /**
+             * Mode
+             * @default half_up
+             * @enum {string}
+             */
+            mode: "half_up" | "down";
+            /**
+             * Precision
+             * @default 2
+             */
+            precision: number;
+        };
+        /** RuleBonus */
+        RuleBonus: {
+            /** Label */
+            label: string;
+            /** Min Revenue */
+            min_revenue: string;
+            /** Amount */
+            amount: string;
+        };
+        /** SalaryComponent */
+        SalaryComponent: {
+            /** Component */
+            component: string;
+            /** Label */
+            label: string;
+            /** Amount */
+            amount: string;
+            /** Basis */
+            basis?: string | null;
+            /** Rate */
+            rate?: string | null;
+        };
+        /** SalaryPaymentOut */
+        SalaryPaymentOut: {
+            /**
+             * Payment Entry Id
+             * Format: uuid
+             */
+            payment_entry_id: string;
+            /** Number */
+            number: string | null;
+            /**
+             * Paid On
+             * Format: date
+             */
+            paid_on: string;
+            /** Amount */
+            amount: string;
+            /** Period Label */
+            period_label: string | null;
+        };
+        /** SalaryPeriodOut */
+        SalaryPeriodOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /**
+             * End Date
+             * Format: date
+             */
+            end_date: string;
+            /** Is Transition */
+            is_transition: boolean;
+            /** Status */
+            status: string;
+            /** Closed At */
+            closed_at: string | null;
+            /** Reopened At */
+            reopened_at: string | null;
+            /** Reopen Reason */
+            reopen_reason: string | null;
+            /**
+             * Is Current
+             * @default false
+             */
+            is_current: boolean;
+            /**
+             * Is Future
+             * @default false
+             */
+            is_future: boolean;
+        };
+        /** SalaryReportCell */
+        SalaryReportCell: {
+            /** Revenue */
+            revenue: string;
+            /** Calculated */
+            calculated: string;
+            /** Paid */
+            paid: string;
+            /** Status */
+            status: string;
+        };
+        /** SalaryReportOut */
+        SalaryReportOut: {
+            /** Periods */
+            periods: components["schemas"]["ReportPeriod"][];
+            /** Rows */
+            rows: components["schemas"]["SalaryReportRow"][];
+        };
+        /** SalaryReportRow */
+        SalaryReportRow: {
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /** Employee Name */
+            employee_name: string;
+            /** By Period */
+            by_period: (components["schemas"]["SalaryReportCell"] | null)[];
+            /** Calculated */
+            calculated: string;
+            /** Paid */
+            paid: string;
+            /** Balance */
+            balance: string;
+        };
         /** SetPasswordIn */
         SetPasswordIn: {
             /** Password */
             password: string;
+        };
+        /** SpanOut */
+        SpanOut: {
+            /** Label */
+            label: string;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /**
+             * End Date
+             * Format: date
+             */
+            end_date: string;
+            /** Is Transition */
+            is_transition: boolean;
         };
         /** SplitRow */
         "SplitRow-Input": {
@@ -3034,6 +4211,59 @@ export interface components {
             amount?: string | null;
             /** Project Id */
             project_id?: string | null;
+        };
+        /** StatementOut */
+        StatementOut: {
+            /**
+             * Period Id
+             * Format: uuid
+             */
+            period_id: string;
+            /** Period Label */
+            period_label: string;
+            /**
+             * Period Start
+             * Format: date
+             */
+            period_start: string;
+            /**
+             * Period End
+             * Format: date
+             */
+            period_end: string;
+            /** Period Status */
+            period_status: string;
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /** Employee Name */
+            employee_name: string;
+            /** Revenue */
+            revenue: string;
+            /** Formula Id */
+            formula_id: string | null;
+            /** Formula Name */
+            formula_name: string | null;
+            /** Formula Version No */
+            formula_version_no: number | null;
+            /** Rate */
+            rate: string;
+            /** Formula Amount */
+            formula_amount: string;
+            /** Adjustments Total */
+            adjustments_total: string;
+            /** Calculated */
+            calculated: string;
+            /** Paid */
+            paid: string;
+            /** Status */
+            status: string;
+            /** Frozen */
+            frozen: boolean;
+            /** Components */
+            components: components["schemas"]["SalaryComponent"][];
         };
         /** StatementRow */
         StatementRow: {
@@ -3162,6 +4392,20 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** VersionCreateIn */
+        VersionCreateIn: {
+            /** Definition */
+            definition: {
+                [key: string]: unknown;
+            };
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Notes */
+            notes?: string | null;
         };
     };
     responses: never;
@@ -4910,6 +6154,38 @@ export interface operations {
             };
         };
     };
+    holdings_api_v1_reports_holdings_get: {
+        parameters: {
+            query?: {
+                as_of?: string | null;
+                format?: "json" | "csv";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HoldingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     balance_sheet_api_v1_reports_balance_sheet_get: {
         parameters: {
             query: {
@@ -6174,6 +7450,812 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_formulas_api_v1_comp_formulas_get: {
+        parameters: {
+            query?: {
+                include_inactive?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormulaOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_formula_api_v1_comp_formulas_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FormulaCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormulaOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_formula_api_v1_comp_formulas__formula_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                formula_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormulaDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_formula_api_v1_comp_formulas__formula_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                formula_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FormulaUpdateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormulaOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_version_api_v1_comp_formulas__formula_id__versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                formula_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VersionCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormulaVersionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_version_api_v1_comp_formula_versions__version_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_api_v1_comp_formulas_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FormulaPreviewIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormulaPreviewOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_assignments_api_v1_comp_assignments_get: {
+        parameters: {
+            query?: {
+                employee_id?: string | null;
+                formula_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_assignment_api_v1_comp_assignments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignmentCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_assignment_api_v1_comp_assignments__assignment_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assignment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_assignment_api_v1_comp_assignments__assignment_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assignment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignmentUpdateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_periods_api_v1_salary_periods_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalaryPeriodOut"][];
+                };
+            };
+        };
+    };
+    board_api_v1_salary_periods__period_id__statements_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                period_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_period_api_v1_salary_periods__period_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                period_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalaryPeriodOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reopen_period_api_v1_salary_periods__period_id__reopen_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                period_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReopenIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalaryPeriodOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_adjustments_api_v1_salary_periods__period_id__adjustments_get: {
+        parameters: {
+            query?: {
+                employee_id?: string | null;
+            };
+            header?: never;
+            path: {
+                period_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdjustmentOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_adjustment_api_v1_salary_periods__period_id__adjustments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                period_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdjustmentIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdjustmentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_adjustment_api_v1_salary_adjustments__adjustment_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                adjustment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    employee_salary_api_v1_employees__employee_id__salary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeSalaryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_salary_api_v1_me_salary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeSalaryOut"];
+                };
+            };
+        };
+    };
+    employee_revenue_api_v1_employees__employee_id__revenue_get: {
+        parameters: {
+            query?: {
+                salary_period_id?: string | null;
+            };
+            header?: never;
+            path: {
+                employee_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeRevenueOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_cycle_api_v1_settings_salary_cycle_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CycleOut"];
+                };
+            };
+        };
+    };
+    set_cycle_api_v1_settings_salary_cycle_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CycleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CycleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_cycle_api_v1_settings_salary_cycle_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CycleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CycleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revenue_report_api_v1_reports_employee_revenue_get: {
+        parameters: {
+            query?: {
+                from_period_id?: string | null;
+                to_period_id?: string | null;
+                format?: "json" | "csv";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevenueReportOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    salary_report_api_v1_reports_employee_salary_get: {
+        parameters: {
+            query?: {
+                from_period_id?: string | null;
+                to_period_id?: string | null;
+                format?: "json" | "csv";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalaryReportOut"];
                 };
             };
             /** @description Validation Error */

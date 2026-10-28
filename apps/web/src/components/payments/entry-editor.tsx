@@ -16,11 +16,11 @@ import { Button } from "@/components/ui/button";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/misc";
 import { api, ApiError, newIdempotencyKey } from "@/lib/api";
-import { decimals, formatAmount, isDecimal } from "@/lib/money";
+import { decimals, formatAmount, isDecimal, sign, subtract } from "@/lib/money";
 import { currencyPrecision, useCompany, useCurrencies, useEmployees, usePaymentAccounts } from "@/lib/queries";
 import { useCan } from "@/lib/session";
-import type { PaymentEntry, PaymentPreview, SplitRow } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import type { EmployeeSalary, PaymentEntry, PaymentPreview, SplitRow } from "@/lib/types";
+import { cn, formatDate } from "@/lib/utils";
 
 type Direction = "receive" | "pay" | "internal_transfer";
 
@@ -42,9 +42,13 @@ type FormState = {
   fee_paid_by: "client" | "company";
   project_id: string | null;
   employee_id: string | null;
+  salary_period_id: string | null;
   reference_no: string;
   description: string;
 };
+
+/** Pre-fill for "Pay" on the salary board: employee, amount owed and the period it pays. */
+export type SalaryPrefill = { employeeId: string; amount?: string; periodId?: string };
 
 const today = () => new Date().toISOString().slice(0, 10);
 const emptyCat = (): CategoryValue => ({ category_id: null, other_text: "" });
@@ -61,16 +65,25 @@ function fromEntry(e: PaymentEntry): FormState {
     paid_to_payment_account_id: e.paid_to_payment_account_id ?? null,
     counter_account_id: e.counter_account_id ?? null,
     amount: trimZeros(e.amount),
-    exchange_rate: trimZeros(e.exchange_rate),
+    exchange_rate: e.exchange_rate ? trimZeros(e.exchange_rate) : "",
     received_amount: e.received_amount ? trimZeros(e.received_amount) : "",
     received_exchange_rate: e.received_exchange_rate ? trimZeros(e.received_exchange_rate) : "",
     fee_amount: Number(e.fee_amount) ? trimZeros(e.fee_amount) : "",
     fee_paid_by: e.fee_paid_by as "client" | "company",
     project_id: e.project_id ?? null,
     employee_id: e.employee_id ?? null,
+    salary_period_id: e.salary_period_id ?? null,
     reference_no: e.reference_no ?? "",
     description: e.description ?? "",
   };
+}
+
+type RateLookup = { rate: string; rate_date: string | null };
+
+function rateHint(typed: string, saved: RateLookup | undefined, missing: boolean): string {
+  if (typed) return saved ? `Typed; overrides the saved rate ${trimZeros(saved.rate)}` : "Typed on this payment";
+  if (saved) return `Empty: uses the saved rate ${trimZeros(saved.rate)}${saved.rate_date ? ` from ${formatDate(saved.rate_date)}` : ""}`;
+  return missing ? "No saved rate for this date: enter one, or add it under Currencies & Rates" : "Uses the saved rate for the date";
 }
 
 function trimZeros(v: string): string {
@@ -88,13 +101,14 @@ const blank = (direction: Direction): FormState => ({
   paid_to_payment_account_id: null,
   counter_account_id: null,
   amount: "",
-  exchange_rate: "1",
+  exchange_rate: "",
   received_amount: "",
   received_exchange_rate: "",
   fee_amount: "",
   fee_paid_by: "company",
   project_id: null,
   employee_id: null,
+  salary_period_id: null,
   reference_no: "",
   description: "",
 });
@@ -115,13 +129,15 @@ function toBody(f: FormState, splits: SplitRow[] | null) {
     paid_to_payment_account_id: f.direction === "pay" ? null : f.paid_to_payment_account_id,
     counter_account_id: transfer ? null : f.counter_account_id,
     amount: f.amount,
-    exchange_rate: f.exchange_rate || "1",
+    // Empty = the server uses the saved rate for the posting date.
+    exchange_rate: f.exchange_rate || null,
     received_amount: transfer && f.received_amount ? f.received_amount : null,
     received_exchange_rate: transfer && f.received_exchange_rate ? f.received_exchange_rate : null,
     fee_amount: f.fee_amount || "0",
     fee_paid_by: f.fee_paid_by,
     project_id: transfer ? null : f.project_id,
     employee_id: f.direction === "pay" ? f.employee_id : null,
+    salary_period_id: f.direction === "pay" ? f.salary_period_id : null,
     reference_no: f.reference_no || null,
     description: f.description || null,
     allocations: splits,
@@ -143,7 +159,7 @@ const DIRECTIONS: { value: Direction; label: string; icon: typeof ArrowDownLeft;
   { value: "internal_transfer", label: "Transfer", icon: ArrowLeftRight, hint: "Between our accounts" },
 ];
 
-export function PaymentEntryEditor({ entry }: { entry?: PaymentEntry }) {
+export function PaymentEntryEditor({ entry, salary }: { entry?: PaymentEntry; salary?: SalaryPrefill }) {
   const router = useRouter();
   const qc = useQueryClient();
   const can = useCan();
@@ -161,11 +177,28 @@ export function PaymentEntryEditor({ entry }: { entry?: PaymentEntry }) {
     ),
   );
   const [splitTouched, setSplitTouched] = useState(!!entry?.allocations.length);
-  const [rateTouched, setRateTouched] = useState(!!entry);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }));
+
+  const employees = useEmployees();
+  const [prefilled, setPrefilled] = useState(false);
+  useEffect(() => {
+    if (!salary || prefilled || entry || !purposes.data || !employees.data) return;
+    const salaryPurpose = purposes.data.find((c) => c.system_key === "employee_salary");
+    const employee = employees.data.find((e) => e.id === salary.employeeId);
+    setForm((f) => ({
+      ...f,
+      direction: "pay",
+      purpose: { category_id: salaryPurpose?.id ?? null, other_text: "" },
+      party_id: employee?.party_id ?? null,
+      amount: salary.amount ?? "",
+      salary_period_id: salary.periodId ?? null,
+      description: employee ? `Salary, ${employee.full_name}` : "",
+    }));
+    setPrefilled(true);
+  }, [salary, prefilled, entry, purposes.data, employees.data]);
 
   const ours = paymentAccounts.data?.find(
     (p) => p.id === (form.direction === "receive" ? form.paid_to_payment_account_id : form.paid_from_payment_account_id),
@@ -178,28 +211,20 @@ export function PaymentEntryEditor({ entry }: { entry?: PaymentEntry }) {
   const isTransfer = form.direction === "internal_transfer";
   const crossCurrency = isTransfer && dst && ours && dst.currency !== ours.currency;
 
-  // Exchange rates: fetch the stored rate for the date unless the user typed one.
+  // Exchange rates: a typed rate wins; an empty field means the saved rate for the date is used on submit.
+  // The lookups only show which saved rate that would be.
   const rateLookup = useQuery({
     queryKey: ["rate", currency, base, form.posting_date],
-    queryFn: () => api.get<{ rate: string }>("/exchange-rates/lookup", { from: currency, to: base, on: form.posting_date }),
+    queryFn: () => api.get<RateLookup>("/exchange-rates/lookup", { from: currency, to: base, on: form.posting_date }),
     enabled: currency !== base && !!form.posting_date,
     retry: false,
   });
-  useEffect(() => {
-    if (currency === base) set("exchange_rate", "1");
-    else if (!rateTouched && rateLookup.data) set("exchange_rate", trimZeros(rateLookup.data.rate));
-  }, [currency, base, rateLookup.data, rateTouched]);
   const dstRateLookup = useQuery({
     queryKey: ["rate", dst?.currency, base, form.posting_date],
-    queryFn: () => api.get<{ rate: string }>("/exchange-rates/lookup", { from: dst!.currency, to: base, on: form.posting_date }),
+    queryFn: () => api.get<RateLookup>("/exchange-rates/lookup", { from: dst!.currency, to: base, on: form.posting_date }),
     enabled: !!crossCurrency && dst?.currency !== base,
     retry: false,
   });
-  useEffect(() => {
-    if (!crossCurrency) return;
-    if (dst?.currency === base) set("received_exchange_rate", "1");
-    else if (dstRateLookup.data && !form.received_exchange_rate) set("received_exchange_rate", trimZeros(dstRateLookup.data.rate));
-  }, [crossCurrency, dst?.currency, base, dstRateLookup.data, form.received_exchange_rate]);
 
   // Pre-fill the split from the project's default when the user hasn't edited it.
   const loadProjectDefault = async (projectId: string | null) => {
@@ -351,7 +376,7 @@ export function PaymentEntryEditor({ entry }: { entry?: PaymentEntry }) {
                 hint={purpose?.system_key === "employee_salary" ? "Salary payments go to an employee." : undefined}
               >
                 {purpose?.system_key === "employee_salary" ? (
-                  <EmployeePartyPicker value={form.party_id} onChange={(v) => set("party_id", v)} />
+                  <EmployeePartyPicker value={form.party_id} onChange={(v) => setForm((f) => ({ ...f, party_id: v, salary_period_id: null }))} />
                 ) : (
                   <PartyPicker
                     id="party"
@@ -362,6 +387,16 @@ export function PaymentEntryEditor({ entry }: { entry?: PaymentEntry }) {
                   />
                 )}
               </FormField>
+            )}
+
+            {form.direction === "pay" && purpose?.system_key === "employee_salary" && form.party_id && (
+              <SalaryTarget
+                employeeId={employees.data?.find((e) => e.party_id === form.party_id)?.id}
+                value={form.salary_period_id}
+                onChange={(v) => set("salary_period_id", v)}
+                onUseAmount={(v) => set("amount", v)}
+                error={errors.salary_period_id}
+              />
             )}
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -411,17 +446,15 @@ export function PaymentEntryEditor({ entry }: { entry?: PaymentEntry }) {
                   id="exchange_rate"
                   label={`Rate 1 ${currency} = ? ${base}`}
                   error={errors.exchange_rate}
-                  hint={rateLookup.isError ? "No stored rate for this date: enter one" : rateTouched ? "Entered manually" : "From stored rates"}
+                  hint={rateHint(form.exchange_rate, rateLookup.data, rateLookup.isError)}
                 >
                   <Input
                     id="exchange_rate"
                     inputMode="decimal"
                     className="tabular text-right"
                     value={form.exchange_rate}
-                    onChange={(e) => {
-                      setRateTouched(true);
-                      set("exchange_rate", e.target.value.trim());
-                    }}
+                    placeholder={rateLookup.data ? trimZeros(rateLookup.data.rate) : "required"}
+                    onChange={(e) => set("exchange_rate", e.target.value.trim())}
                   />
                 </FormField>
               )}
@@ -469,11 +502,17 @@ export function PaymentEntryEditor({ entry }: { entry?: PaymentEntry }) {
                   />
                 </FormField>
                 {crossCurrency && dst.currency !== base && (
-                  <FormField id="received_exchange_rate" label={`Rate 1 ${dst.currency} = ? ${base}`} error={errors.received_exchange_rate}>
+                  <FormField
+                    id="received_exchange_rate"
+                    label={`Rate 1 ${dst.currency} = ? ${base}`}
+                    error={errors.received_exchange_rate}
+                    hint={rateHint(form.received_exchange_rate, dstRateLookup.data, dstRateLookup.isError)}
+                  >
                     <Input
                       id="received_exchange_rate"
                       inputMode="decimal"
                       className="tabular text-right"
+                      placeholder={dstRateLookup.data ? trimZeros(dstRateLookup.data.rate) : "required"}
                       value={form.received_exchange_rate}
                       onChange={(e) => set("received_exchange_rate", e.target.value.trim())}
                     />
@@ -637,5 +676,63 @@ function EmployeePartyPicker({ value, onChange }: { value: string | null; onChan
       value={selected?.id ?? null}
       onChange={(employeeId) => onChange(employees.data?.find((e) => e.id === employeeId)?.party_id ?? null)}
     />
+  );
+}
+
+/** Salary payments: what the employee is owed, and which period this pays (default: oldest unpaid first). */
+function SalaryTarget({
+  employeeId,
+  value,
+  onChange,
+  onUseAmount,
+  error,
+}: {
+  employeeId: string | undefined;
+  value: string | null;
+  onChange: (periodId: string | null) => void;
+  onUseAmount: (amount: string) => void;
+  error?: string;
+}) {
+  const salary = useQuery({
+    queryKey: ["employee-salary", employeeId],
+    queryFn: () => api.get<EmployeeSalary>(`/employees/${employeeId}/salary`),
+    enabled: !!employeeId,
+    retry: false,
+  });
+  if (!employeeId || salary.isError) return null;
+  const s = salary.data;
+  const open = s?.statements.filter((x) => sign(subtract(x.calculated, x.paid)) > 0) ?? [];
+  const owed = s && sign(s.balance) > 0 ? s.balance : null;
+  return (
+    <div className="flex flex-col gap-3 rounded-md border bg-muted/40 p-3 text-sm">
+      {!s ? (
+        <span className="text-muted-foreground">Loading salary balance…</span>
+      ) : (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span>
+            Salary balance:{" "}
+            <strong className="tabular">{formatAmount(s.balance)}</strong>{" "}
+            <span className="text-muted-foreground">{sign(s.balance) > 0 ? "owed to them" : sign(s.balance) < 0 ? "paid ahead" : "settled"}</span>
+          </span>
+          {owed && (
+            <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={() => onUseAmount(owed)}>
+              Pay the full balance
+            </Button>
+          )}
+        </div>
+      )}
+      <FormField id="salary_period" label="Pays salary for" error={error} hint="Leave on automatic to pay the oldest unpaid period first.">
+        <Select id="salary_period" value={value ?? ""} onChange={(e) => onChange(e.target.value || null)}>
+          <option value="">Automatic (oldest unpaid first)</option>
+          {(s?.statements ?? [])
+            .filter((x) => open.includes(x) || x.period_id === value)
+            .map((x) => (
+              <option key={x.period_id} value={x.period_id}>
+                {x.period_label}: {formatAmount(x.calculated)} calculated, {formatAmount(x.paid)} paid
+              </option>
+            ))}
+        </Select>
+      </FormField>
+    </div>
   );
 }

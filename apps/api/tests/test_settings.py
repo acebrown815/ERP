@@ -15,11 +15,9 @@ async def test_company_settings_update_and_audit(admin) -> None:  # type: ignore
             "version": company["version"],
             "name": "Acme Software",
             "timezone": "America/Chicago",
-            "salary_cycle_start_day": 25,
         },
     )
     assert res.status_code == 200, res.text
-    assert res.json()["salary_cycle_start_day"] == 25
 
     stale = await admin.patch("/api/v1/settings/company", json={"version": company["version"], "name": "X"})
     assert stale.status_code == 412
@@ -28,7 +26,6 @@ async def test_company_settings_update_and_audit(admin) -> None:  # type: ignore
     assert logs["items"][0]["after"] == {
         "name": "Acme Software",
         "timezone": "America/Chicago",
-        "salary_cycle_start_day": 25,
     }
 
 
@@ -37,8 +34,9 @@ async def test_company_settings_validation(admin) -> None:  # type: ignore[no-un
     assert (
         await admin.patch("/api/v1/settings/company", json={"version": v, "timezone": "Mars/Base"})
     ).status_code == 422
+    # The salary cycle is changed through /settings/salary-cycle, which previews the transition.
     assert (
-        await admin.patch("/api/v1/settings/company", json={"version": v, "salary_cycle_start_day": 31})
+        await admin.patch("/api/v1/settings/company", json={"version": v, "salary_cycle_start_day": 25})
     ).status_code == 422
     assert (
         await admin.patch("/api/v1/settings/company", json={"version": v, "base_currency": "BTC"})
@@ -69,6 +67,8 @@ async def test_currencies(admin, client_as: ClientFactory) -> None:  # type: ign
         await admin.post("/api/v1/currencies", json={"code": "SOL", "name": "x", "precision": 2})
     ).status_code == 409
     assert (await admin.patch("/api/v1/currencies/USD", json={"is_active": False})).status_code == 422
+    edited = await admin.patch("/api/v1/currencies/SOL", json={"name": "Solana (SOL)", "symbol": "◎", "precision": 6})
+    assert edited.status_code == 200 and edited.json()["precision"] == 6  # unused: decimals may go down
 
     employee = await client_as("employee")
     assert (await employee.get("/api/v1/currencies")).status_code == 200

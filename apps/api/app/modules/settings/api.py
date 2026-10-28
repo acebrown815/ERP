@@ -9,6 +9,8 @@ from app.modules.settings.service import (
     lookup_rate,
     policy,
     seed,
+    set_salary_cycle_start_day,
+    today,
 )
 
 __all__ = [
@@ -20,4 +22,6 @@ __all__ = [
     "lookup_rate",
     "policy",
     "seed",
+    "set_salary_cycle_start_day",
+    "today",
 ]

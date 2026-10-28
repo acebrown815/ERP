@@ -4,9 +4,10 @@ from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import clock
 from app.core.errors import Conflict, NotFound, PreconditionFailed, ValidationFailed, field_error
 from app.modules.audit import api as audit
 from app.modules.settings.models import CompanySettings, Currency, ExchangeRate
@@ -174,6 +175,18 @@ async def update_currency(
                 "The base currency cannot be deactivated",
                 errors=[field_error("is_active", "Base currency must stay active", "base_currency")],
             )
+    if changes.get("precision") is not None and changes["precision"] < cur.precision:
+        # Recorded amounts may use the extra places. Plain SQL: settings sits below accounting.
+        used = (
+            await session.execute(text("SELECT 1 FROM journal_lines WHERE currency = :c LIMIT 1"), {"c": cur.code})
+        ).first()
+        if used:
+            raise ValidationFailed(
+                "Precision in use",
+                errors=[
+                    field_error("precision", f"{cur.code} is already used in the ledger; decimals can only increase")
+                ],
+            )
     for key, value in changes.items():
         setattr(cur, key, value)
     await session.flush()
@@ -337,3 +350,30 @@ async def lock_base_currency(session: AsyncSession) -> None:
 async def policy(session: AsyncSession, key: str) -> Any:
     company = await get_company(session)
     return company.policies.get(key, DEFAULT_POLICIES.get(key))
+
+
+async def today(session: AsyncSession) -> date:
+    """Today in the company's time zone."""
+    return clock.today((await get_company(session)).timezone)
+
+
+async def set_salary_cycle_start_day(session: AsyncSession, *, actor_id: uuid.UUID, day: int) -> CompanySettings:
+    """Owned by the salary module, which first checks what the change does to existing periods."""
+    company = await get_company(session)
+    if company.salary_cycle_start_day == day:
+        return company
+    before = company.salary_cycle_start_day
+    company.salary_cycle_start_day = day
+    company.updated_by = actor_id
+    company.version += 1
+    await session.flush()
+    await audit.record(
+        session,
+        actor_id=actor_id,
+        action="company_settings.updated",
+        entity_type="company_settings",
+        entity_id=company.id,
+        before={"salary_cycle_start_day": before},
+        after={"salary_cycle_start_day": day},
+    )
+    return company

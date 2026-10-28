@@ -65,6 +65,12 @@ def _validate_config(group: CategoryGroup, config: dict[str, Any]) -> dict[str, 
                 ok = False
         if not ok:
             errors.append(field_error(f"config.{key}", f"Expected {kind}", "invalid_type"))
+        elif key in group.config_choices:
+            allowed = group.config_choices[key]
+            if any(v not in allowed for v in (value if isinstance(value, list) else [value])):
+                errors.append(field_error(f"config.{key}", f"Choose from: {', '.join(allowed)}"))
+    if not errors and group.config_check:
+        errors += [field_error(k, m) for k, m in group.config_check(config)]
     if errors:
         raise ValidationFailed("Invalid category settings", errors=errors)
     return config
@@ -226,7 +232,18 @@ async def update_category(
     if "sort_order" in changes:
         category.sort_order = changes["sort_order"]
     if "config" in changes:
-        category.config = _validate_config(group, changes["config"] or {})
+        new = _validate_config(group, changes["config"] or {})
+        if category.is_system:
+            locked = [k for k in group.system_locked if new.get(k) != category.config.get(k)]
+            if locked:
+                raise ValidationFailed(
+                    "Built-in setting",
+                    errors=[
+                        field_error(f"config.{k}", "Fixed on built-in values; create a custom value instead")
+                        for k in locked
+                    ],
+                )
+        category.config = new
 
     category.version += 1
     category.updated_by = actor_id

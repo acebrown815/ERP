@@ -111,12 +111,11 @@ async def activate(
     precision: int,
     require_full: bool = True,
 ) -> list[RevenueAllocation]:
+    """The split is optional: with no rows the revenue counts toward nobody's salary. With rows, they must
+    cover the eligible amount exactly (no partial splits)."""
     rows = await for_payment(session, payment_id)
-    if require_full and not rows:
-        raise ValidationFailed(
-            "Revenue split required",
-            errors=[field_error("allocations", "Assign this payment to at least one employee", "required")],
-        )
+    if not rows:
+        return []
     inactive = set(r.employee_id for r in rows) - await employees.active_ids(session, [r.employee_id for r in rows], on)
     if inactive:
         names = await employees.names(session, list(inactive))
@@ -198,3 +197,40 @@ async def employee_totals(
     if employee_ids is not None:
         stmt = stmt.where(RevenueAllocation.employee_id.in_(employee_ids))
     return dict((await session.execute(stmt)).all())
+
+
+async def employee_project_totals(
+    session: AsyncSession, *, date_from: date, date_to: date, employee_ids: list[uuid.UUID] | None = None
+) -> list[tuple[uuid.UUID, uuid.UUID | None, Decimal, int]]:
+    """(employee, project, revenue, number of payments) for active allocations in the date range."""
+    stmt = (
+        select(
+            RevenueAllocation.employee_id,
+            RevenueAllocation.project_id,
+            func.sum(RevenueAllocation.amount_base),
+            func.count(),
+        )
+        .where(RevenueAllocation.status == "active", RevenueAllocation.attribution_date.between(date_from, date_to))
+        .group_by(RevenueAllocation.employee_id, RevenueAllocation.project_id)
+    )
+    if employee_ids is not None:
+        stmt = stmt.where(RevenueAllocation.employee_id.in_(employee_ids))
+    return [tuple(r) for r in (await session.execute(stmt)).all()]  # type: ignore[misc]
+
+
+async def active_for_employee(
+    session: AsyncSession, *, employee_id: uuid.UUID, date_from: date, date_to: date
+) -> list[RevenueAllocation]:
+    return list(
+        (
+            await session.execute(
+                select(RevenueAllocation)
+                .where(
+                    RevenueAllocation.employee_id == employee_id,
+                    RevenueAllocation.status == "active",
+                    RevenueAllocation.attribution_date.between(date_from, date_to),
+                )
+                .order_by(RevenueAllocation.attribution_date, RevenueAllocation.created_at)
+            )
+        ).scalars()
+    )

@@ -6,6 +6,7 @@ user and the actual submit always agree.
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -41,6 +42,8 @@ class Posting:
     eligible_amount_base: Decimal | None  # set when the purpose requires an employee split
     counter_account_id: uuid.UUID | None
     employee_id: uuid.UUID | None
+    exchange_rate: Decimal = Decimal(1)  # as used: typed on the entry or the saved rate
+    received_exchange_rate: Decimal | None = None  # internal transfers
     warnings: list[str] = field(default_factory=list)
 
 
@@ -69,14 +72,36 @@ async def _payment_account(
 
 
 async def _rate(
-    session: AsyncSession, currency: str, given: Decimal | None, f: str, errors: _Errors, base_code: str
+    session: AsyncSession,
+    currency: str,
+    given: Decimal | None,
+    on: date,
+    f: str,
+    errors: _Errors,
+    base_code: str,
+    warnings: list[str],
 ) -> Decimal:
+    """The rate typed on the entry, else the saved rate for the date (Settings → Currencies & Rates)."""
     if currency == base_code:
         return Decimal(1)
-    if not given or given <= 0:
-        errors.add(f, f"Enter the {currency}→{base_code} exchange rate", "required")
+    if given is not None:
+        if given <= 0:
+            errors.add(f, "The exchange rate must be greater than zero")
+            return Decimal(1)
+        return given
+    try:
+        rate, rate_date, _ = await settings.lookup_rate(session, currency, base_code, on)
+    except NotFound:
+        errors.add(
+            f,
+            f"No saved {currency}→{base_code} rate on or before {on.isoformat()}. "
+            "Enter the rate here or add one under Settings → Currencies & Rates.",
+            "required",
+        )
         return Decimal(1)
-    return given
+    since = f" from {rate_date.isoformat()}" if rate_date else ""
+    warnings.append(f"Using the saved {currency}→{base_code} rate {rate.normalize():f}{since}")
+    return rate
 
 
 async def _choice(session: AsyncSession, errors: _Errors, **kwargs: Any) -> Any:
@@ -127,6 +152,10 @@ async def build(session: AsyncSession, pe: PaymentEntry) -> Posting:
                 field="category_id",
                 other_field="category_other_text",
             )
+            # Fields this category makes mandatory (Settings → Custom Categories).
+            for f in (category.config.get("required_fields") or []) if category else []:
+                if not str(getattr(pe, f, "") or "").strip():
+                    errors.add(f, f"Required for “{category.name}”", "required")
 
     config = dict(purpose.config) if purpose else {}
     rule: str | None = config.get("posting_rule")
@@ -181,7 +210,10 @@ async def build(session: AsyncSession, pe: PaymentEntry) -> Posting:
     company_fee = fee if pe.fee_paid_by == "company" else ZERO
     if pe.direction == "receive" and pe.amount and company_fee >= pe.amount:
         errors.add("fee_amount", "The fee must be smaller than the amount")
-    rate = await _rate(session, pe.currency, pe.exchange_rate, "exchange_rate", errors, base.code)
+    warnings: list[str] = []
+    rate = await _rate(
+        session, pe.currency, pe.exchange_rate, pe.posting_date, "exchange_rate", errors, base.code, warnings
+    )
 
     # Party, project, employee ----------------------------------------------------------------------
     party = None
@@ -216,7 +248,6 @@ async def build(session: AsyncSession, pe: PaymentEntry) -> Posting:
             project = await projects.get(session, pe.project_id)
         except NotFound:
             errors.add("project_id", "Unknown project")
-    warnings: list[str] = []
     if project and party and project.customer_party_id and project.customer_party_id != party.id:
         warnings.append(f"{project.name} belongs to a different customer")
 
@@ -233,6 +264,7 @@ async def build(session: AsyncSession, pe: PaymentEntry) -> Posting:
     tags = {"party_id": pe.party_id, "project_id": pe.project_id, "employee_id": employee_id}
     lines: list[accounting.LineIn] = []
     eligible: Decimal | None = None
+    dst_rate: Decimal | None = None
 
     if pe.direction == "receive":
         assert dst and counter
@@ -304,7 +336,9 @@ async def build(session: AsyncSession, pe: PaymentEntry) -> Posting:
         base_amount = counter_base
     else:
         assert src and dst
-        lines, base_amount = await _transfer_lines(session, pe, src, dst, rate, company_fee, fee_account, base, errors)
+        lines, base_amount, dst_rate = await _transfer_lines(
+            session, pe, src, dst, rate, company_fee, fee_account, base, errors, warnings
+        )
         errors.raise_if_any()
 
     return Posting(
@@ -314,6 +348,8 @@ async def build(session: AsyncSession, pe: PaymentEntry) -> Posting:
         eligible_amount_base=eligible,
         counter_account_id=counter.id if counter else None,
         employee_id=employee_id,
+        exchange_rate=rate,
+        received_exchange_rate=dst_rate,
         warnings=warnings,
     )
 
@@ -369,23 +405,31 @@ async def _transfer_lines(
     fee_account: Any,
     base: Any,
     errors: _Errors,
-) -> tuple[list[accounting.LineIn], Decimal]:
+    warnings: list[str],
+) -> tuple[list[accounting.LineIn], Decimal, Decimal | None]:
     q = lambda v: quantize(v, base.precision)  # noqa: E731
     assert pe.amount is not None
     same_currency = src.currency == dst.currency
     received = pe.received_amount if pe.received_amount is not None else (pe.amount if same_currency else None)
     if received is None or received <= 0:
         errors.add("received_amount", f"Enter how much {dst.currency} arrived", "required")
-        return [], ZERO
+        return [], ZERO, None
     dst_precision = (await settings.get_currency(session, dst.currency)).precision
     if quantize(received, dst_precision) != received:
         errors.add("received_amount", f"{dst.currency} allows {dst_precision} decimal places")
-        return [], ZERO
+        return [], ZERO, None
     if same_currency:
         dst_rate = rate
     else:
         dst_rate = await _rate(
-            session, dst.currency, pe.received_exchange_rate, "received_exchange_rate", errors, base.code
+            session,
+            dst.currency,
+            pe.received_exchange_rate,
+            pe.posting_date,
+            "received_exchange_rate",
+            errors,
+            base.code,
+            warnings,
         )
 
     out_units = pe.amount + company_fee
@@ -410,7 +454,7 @@ async def _transfer_lines(
     if fee_base:
         lines.insert(1, accounting.LineIn(account_id=fee_account.id, debit=fee_base, description="Transfer fee"))
     await _fx_line(session, lines, src_base - dst_base - fee_base)
-    return lines, q(pe.amount * rate)
+    return lines, q(pe.amount * rate), dst_rate
 
 
 async def _outflow_base(

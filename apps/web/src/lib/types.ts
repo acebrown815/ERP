@@ -41,3 +41,22 @@ export type Allocation = S["AllocationOut"];
 export type SplitRow = S["SplitRow-Input"];
 
 export type Page<T> = { items: T[]; total: number; page: number; page_size: number };
+
+export type FormulaDefinition = S["FormulaDefinition"];
+export type Formula = S["FormulaOut"];
+export type FormulaDetail = S["FormulaDetailOut"];
+export type FormulaVersion = S["FormulaVersionOut"];
+export type FormulaPreview = S["FormulaPreviewOut"];
+export type CompAssignment = S["AssignmentOut"];
+export type SalaryPeriod = S["SalaryPeriodOut"];
+export type SalaryBoard = S["BoardOut"];
+export type SalaryBoardRow = S["BoardRow"];
+export type SalaryStatement = S["StatementOut"];
+export type SalaryComponent = S["SalaryComponent"];
+export type SalaryAdjustment = S["AdjustmentOut"];
+export type EmployeeSalary = S["EmployeeSalaryOut"];
+export type EmployeeRevenue = S["EmployeeRevenueOut"];
+export type SalaryCycle = S["CycleOut"];
+export type RevenueReport = S["RevenueReportOut"];
+export type SalaryReport = S["SalaryReportOut"];
+export type Holdings = S["HoldingsOut"];

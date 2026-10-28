@@ -3,6 +3,7 @@
 Code refers to system values by `system_key`, never by display name, so admins may rename them.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -29,6 +30,12 @@ class CategoryGroup:
     description: str
     config_schema: dict[str, str]
     values: tuple[SystemValue, ...]
+    # Allowed values (value -> label) for settings that are a fixed list.
+    config_choices: dict[str, dict[str, str]] = field(default_factory=dict)
+    # Settings the code relies on: fixed on built-in values, editable on custom ones.
+    system_locked: tuple[str, ...] = ()
+    # Cross-field rule: returns [(key, message)] for an invalid combination.
+    config_check: Callable[[dict[str, Any]], list[tuple[str, str]]] | None = None
 
     @property
     def permission(self) -> str:
@@ -37,6 +44,42 @@ class CategoryGroup:
 
 def _other(**config: Any) -> SystemValue:
     return SystemValue(OTHER, "Other", config, protected=True)
+
+
+# Payment purposes: which ledger posting a payment gets (docs/architecture.md, Section 7.3).
+DIRECTIONS = {"receive": "Money in", "pay": "Money out", "internal_transfer": "Between our own accounts"}
+POSTING_RULES = {
+    "R1": "Customer / project payment (split between employees)",
+    "R2": "Other income",
+    "R3": "Owner capital",
+    "P1": "Supplier / operating expense",
+    "P2": "Employee salary",
+    "P3": "Owner drawings",
+    "T1": "Transfer between our accounts",
+}
+RULE_DIRECTION = {"R": "receive", "P": "pay", "T": "internal_transfer"}
+
+ACCOUNT_KINDS = {"bank": "Bank account", "cash": "Cash", "crypto_wallet": "Crypto wallet", "credit_card": "Credit card"}
+# Payment Entry fields a category can make mandatory (checked when the payment is previewed or submitted).
+REQUIRABLE_FIELDS = {
+    "party_id": "Party (customer / supplier)",
+    "project_id": "Project",
+    "reference_no": "Reference number",
+    "description": "Description",
+}
+COLORS = {
+    c: c.capitalize()
+    for c in ("slate", "red", "orange", "amber", "yellow", "green", "teal", "blue", "indigo", "violet", "pink")
+}
+
+
+def _check_purpose(config: dict[str, Any]) -> list[tuple[str, str]]:
+    rule, direction = config.get("posting_rule"), config.get("direction")
+    if rule and direction and RULE_DIRECTION[rule[0]] != direction:
+        return [("config.posting_rule", f"“{POSTING_RULES[rule]}” doesn't fit {DIRECTIONS[direction].lower()}")]
+    if config.get("requires_attribution") and rule and rule != "R1":
+        return [("config.requires_attribution", "Only customer / project payments are split between employees")]
+    return []
 
 
 GROUPS: dict[str, CategoryGroup] = {
@@ -55,6 +98,7 @@ GROUPS: dict[str, CategoryGroup] = {
                 SystemValue("cash", "Cash", {"allowed_payment_account_kinds": ["cash"]}),
                 _other(),
             ),
+            config_choices={"allowed_payment_account_kinds": ACCOUNT_KINDS},
         ),
         CategoryGroup(
             "payment_purpose",
@@ -87,6 +131,9 @@ GROUPS: dict[str, CategoryGroup] = {
                 ),
                 _other(),
             ),
+            config_choices={"direction": DIRECTIONS, "posting_rule": POSTING_RULES},
+            system_locked=("direction", "posting_rule", "requires_attribution"),
+            config_check=_check_purpose,
         ),
         CategoryGroup(
             "party_subtype",
@@ -115,6 +162,7 @@ GROUPS: dict[str, CategoryGroup] = {
                 SystemValue("subscription", "Subscription"),
                 _other(),
             ),
+            config_choices={"required_fields": REQUIRABLE_FIELDS},
         ),
         CategoryGroup(
             "expense_category",
@@ -131,6 +179,7 @@ GROUPS: dict[str, CategoryGroup] = {
                 SystemValue("bank_fees", "Bank & Payment Fees"),
                 _other(),
             ),
+            config_choices={"required_fields": REQUIRABLE_FIELDS},
         ),
         CategoryGroup(
             "project_type",
@@ -194,6 +243,7 @@ GROUPS: dict[str, CategoryGroup] = {
                 SystemValue("company_event", "Company Event", {"color": "teal"}),
                 _other(),
             ),
+            config_choices={"color": COLORS},
         ),
         CategoryGroup(
             "task_category",
@@ -209,6 +259,7 @@ GROUPS: dict[str, CategoryGroup] = {
                 SystemValue("research", "Research"),
                 _other(),
             ),
+            config_choices={"color": COLORS},
         ),
         CategoryGroup(
             "document_category",

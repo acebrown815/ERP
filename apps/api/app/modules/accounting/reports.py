@@ -5,11 +5,14 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.accounting.models import DEBIT_NORMAL, Account, JournalEntry, JournalLine
+from app.core.errors import NotFound
+from app.core.money import quantize
+from app.modules.accounting.models import DEBIT_NORMAL, MONEY_ACCOUNT_TYPES, Account, JournalEntry, JournalLine
 from app.modules.accounting.service import ZERO, balances, list_accounts
+from app.modules.settings import api as settings
 
 
 def signed(root_type: str, debit: Decimal, credit: Decimal) -> Decimal:
@@ -248,3 +251,64 @@ async def general_ledger(
             )
         )
     return opening, rows, truncated
+
+
+@dataclass
+class Holding:
+    account_id: uuid.UUID
+    code: str
+    name: str
+    account_type: str
+    currency: str
+    units: Decimal  # in the account's own currency
+    book_value: Decimal  # base currency, as recorded (cost)
+    rate: Decimal | None  # saved rate on `as_of`; None if there is none
+    rate_date: date | None
+    market_value: Decimal | None  # units x rate, base currency
+
+
+async def holdings(session: AsyncSession, as_of: date) -> list[Holding]:
+    """Money accounts (bank, cash, wallets, cards) with units in their own currency, the value they were
+    recorded at, and their value at the saved rate on `as_of`. Display only: nothing is posted."""
+
+    base = await settings.base_currency(session)
+    accounts = [a for a in await list_accounts(session) if not a.is_group and a.account_type in MONEY_ACCOUNT_TYPES]
+    if not accounts:
+        return []
+    rows = await session.execute(
+        select(
+            JournalLine.account_id,
+            func.sum(JournalLine.amount_in_currency),
+            func.sum(JournalLine.debit_base - JournalLine.credit_base),
+        )
+        .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
+        .where(JournalLine.account_id.in_([a.id for a in accounts]), JournalEntry.posting_date <= as_of)
+        .group_by(JournalLine.account_id)
+    )
+    sums = {acc: (units or ZERO, book or ZERO) for acc, units, book in rows.all()}
+    rates: dict[str, tuple[Decimal, date | None] | None] = {}
+    out = []
+    for a in accounts:
+        units, book = sums.get(a.id, (ZERO, ZERO))
+        if a.currency not in rates:
+            try:
+                rate, rate_date, _ = await settings.lookup_rate(session, a.currency, base.code, as_of)
+                rates[a.currency] = (rate, rate_date)
+            except NotFound:
+                rates[a.currency] = None
+        found = rates[a.currency]
+        out.append(
+            Holding(
+                account_id=a.id,
+                code=a.code,
+                name=a.name,
+                account_type=a.account_type,
+                currency=a.currency,
+                units=units,
+                book_value=book,
+                rate=found[0] if found else None,
+                rate_date=found[1] if found else None,
+                market_value=quantize(units * found[0], base.precision) if found else None,
+            )
+        )
+    return out

@@ -9,10 +9,12 @@ import type {
   Currency,
   Department,
   Employee,
+  Formula,
   Page,
   Party,
   PaymentAccount,
   Project,
+  SalaryPeriod,
 } from "@/lib/types";
 
 // Shared lookups. Lists that stay small (accounts, payment accounts, employees, projects) load once.
@@ -62,4 +64,12 @@ export function useParty(id: string | null | undefined) {
 
 export function currencyPrecision(currencies: Currency[] | undefined, code: string | null | undefined): number {
   return currencies?.find((c) => c.code === code)?.precision ?? 2;
+}
+
+export function useSalaryPeriods(enabled = true) {
+  return useQuery({ queryKey: ["salary-periods"], queryFn: () => api.get<SalaryPeriod[]>("/salary-periods"), enabled });
+}
+
+export function useFormulas(enabled = true) {
+  return useQuery({ queryKey: ["comp-formulas"], queryFn: () => api.get<Formula[]>("/comp-formulas"), enabled });
 }

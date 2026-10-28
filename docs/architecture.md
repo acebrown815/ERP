@@ -1,7 +1,7 @@
-# ERP for a Software Services Company — Architecture & Design (v0.5)
+# ERP for a Software Services Company — Architecture & Design (v0.6)
 
-Status: **Business rules agreed (see Section 2). Four small follow-ups are open (Section 2.3). Ready to start Phase 1.**
-Date: 2026-10-27
+Status: **Phases 1–3 built. All business rules agreed, including the salary follow-ups (Section 2.3).**
+Date: 2026-10-27 · v0.6 2026-10-28 (Phase 3 implementation notes)
 
 Contents
 
@@ -110,14 +110,14 @@ The bridges between the two are explicit:
 3. **Closing a salary period** (Finance) freezes that period's salary statements. If a payment from a closed period is cancelled later, an Admin must **reopen** that period (audited, with a reason). Its statements then recalculate and the difference flows into the employee's balance.
 4. **Anyone with a salary formula gets monthly statements**, including contractors and freelancers. People paid without a formula are Suppliers.
 
-### 2.3 Open follow-ups (they don't block Phase 1 or Phase 2)
+### 2.3 Salary follow-ups (answered 2026-10-28)
 
-| # | Question | Current assumption |
+| # | Question | Answer |
 |---|---|---|
-| F1 | Above $30k, does the rate stay at 30%? | Stays at 30% |
-| F2 | The curve has a jump at $3k ($2,999 → $0, $3,000 → $240). Intended? | Yes, as described |
-| F3 | Is the rate applied to the whole monthly revenue? (At $6k: rate 10.44% × $6,000 = $626.67) | Yes |
-| F4 | When **we** pay a processor fee, does the employee's revenue count before or after the fee? | After (net): a $10,000 receipt with a $30 company-paid fee counts as $9,970. Configurable in company settings |
+| F1 | Above $30k, does the rate stay at 30%? | **Yes**, it stays at 30% |
+| F2 | The curve has a jump at $3k ($2,999 → $0, $3,000 → $240). Intended? | **Yes** |
+| F3 | Is the rate applied to the whole monthly revenue? (At $6k: rate 10.44% × $6,000 = $626.67) | **Yes**, the whole amount |
+| F4 | When **we** pay a processor fee, does the employee's revenue count before or after the fee? | **After** (net): a $10,000 receipt with a $30 company-paid fee counts as $9,970. Still switchable in company settings |
 
 ---
 
@@ -898,19 +898,12 @@ On a Pay entry where we pay the fee, the bank is credited the amount plus the fe
 
 ### 8.4 Period and totals per salary period
 
-At submit, each allocation gets the **salary period whose `[start_date, end_date]` contains the payment's `posting_date`** (company time zone, Section 10.1). With a 25th cycle, a payment dated Nov 10 counts in "Nov 2026" (Oct 25 – Nov 24), and one dated Nov 25 counts in "Dec 2026".
+An allocation counts in the **salary period whose `[start_date, end_date]` contains its date** (the payment's `posting_date`; company time zone, Section 10.1). *As built:* this is resolved by date range when salary is calculated, so allocations don't store a period id. With a 25th cycle, a payment dated Nov 10 counts in "Nov 2026" (Oct 25 – Nov 24), and one dated Nov 25 counts in "Dec 2026".
 
-```sql
-CREATE VIEW employee_revenue_by_period AS
-SELECT a.employee_id, a.salary_period_id, a.project_id, SUM(a.amount_base) AS attributed_revenue
-FROM revenue_allocations a
-WHERE a.status = 'active'
-GROUP BY a.employee_id, a.salary_period_id, a.project_id;
-```
 
 ### 8.5 Change propagation
 
-Submitting or cancelling a receipt emits `attribution.changed {employee_id, period}`. The worker recalculates that employee's salary statement for the period if the period is open (Section 10). The employee dashboard and reports read the statements.
+Open salary periods are **calculated live** from the active allocations whenever they are read (Section 10.2), so submitting or cancelling a receipt is reflected immediately with no background job. `attribution.changed` is still emitted to the outbox for later consumers (notifications, caches).
 
 ---
 
@@ -920,7 +913,7 @@ Submitting or cancelling a receipt emits `attribution.changed {employee_id, peri
 
 - `comp_formulas` is a named plan, e.g. "Revenue Share 2026".
 - `comp_formula_versions` hold the definition as validated JSON. Each version has an `effective_from` date. Editing creates a new version. A version used by a **closed** month is locked forever, so old months always reproduce the same numbers.
-- `comp_assignments` link an employee to a formula over a date range (no overlaps). For a salary period, the engine uses the version effective on the period's start date.
+- `comp_assignments` link an employee to a formula over a date range (no overlaps). For a salary period, the engine uses the **latest assignment overlapping the period**, at the **version in effect on the last day it covers** (the period end, or the assignment end if earlier). *As built:* the design said "start date"; the last day means a change dated inside the current period applies to it, which is what people expect. Versions and assignments can't be dated on or before the end of the last closed period.
 
 ### 9.2 Rate schedules supported
 
@@ -977,7 +970,7 @@ inputs : attributed_revenue, formula_version, adjustments
 1. rate   = rate_schedule(revenue)
 2. base   = revenue × rate            (or tier math for tier modes)
 3. gross  = base + fixed_amount + rule bonuses + Σ adjustments
-4. apply min/max payout, round
+4. apply min/max payout to the formula part (steps 1–3 without adjustments), then add adjustments, which are never capped; each component is rounded once so the breakdown adds up
 output : calculated_amount + breakdown [{component, basis, rate, amount}] + formula_version_id
 ```
 
@@ -1000,7 +993,7 @@ This replaces the brief's seven-stage payroll lifecycle with the simple model yo
 
 - **Why 1–28:** every month has those days, so all periods are regular with no "31st in February" edge cases. If you ever need "last day of the month" cycles, that can be added as a special value.
 - Periods are **stored rows** (`salary_periods` with explicit start/end dates), generated a few periods ahead. A database exclusion constraint prevents overlaps, and generation guarantees no gaps. History never depends on the current setting.
-- **Changing the start day** only affects periods that haven't started yet. Open and closed periods keep their dates. The system creates **one shorter transition period** to bridge the gap and shows it for confirmation before saving. Example, switching from 1st to 25th after the November calendar month: Dec 1 – Dec 24 (transition), then Dec 25 – Jan 24, and so on.
+- **Changing the start day** only affects periods that haven't started yet. Open and closed periods keep their dates. The system creates **one shorter transition period** to bridge the gap and shows it for confirmation before saving. Example, switching from 1st to 25th after the November calendar month: Dec 1 – Dec 24 (transition), then Dec 25 – Jan 24, and so on. *As built:* while nothing depends on the periods yet (no closed period, adjustment or salary payment), a change simply regenerates all periods with the new day and no transition. The setting has its own screen and endpoint (`/settings/salary-cycle`), not the company form.
 - **Scope:** salary periods drive employee revenue, salary statements, the employee dashboard, and employee revenue/salary reports. **Accounting periods, the P&L and the Balance Sheet stay on calendar months.** Every report also accepts a custom date range.
 
 ### 10.2 Salary periods and statements
@@ -1013,21 +1006,21 @@ stateDiagram-v2
     Closed --> Open: Admin reopens (reason required, audited)
 ```
 
-- There is one **salary statement per employee per salary period**: attributed revenue, formula version, rate, breakdown, manual adjustments (bonus/deduction with reason), calculated amount, paid amount.
-- **Open period:** statements recalculate automatically whenever attribution changes, so the employee sees a live "projected salary".
-- **Closed period:** statements are frozen. Receipts dated inside that period can't be cancelled until an Admin reopens it.
+- There is one **salary statement per employee per salary period**: attributed revenue, formula version, rate, breakdown, manual adjustments (bonus/deduction/correction with reason), calculated amount, paid amount.
+- **Open period:** statements are calculated live on every read, so the employee sees a current "projected salary". *As built:* nothing is stored for open periods, so they can't go stale.
+- **Closed period:** statements are frozen into `salary_statements` rows and the formula versions they used are locked. Receipts dated inside that period can't be submitted or cancelled until an Admin reopens it. Periods close oldest first and reopen newest first. Reopening deletes the frozen rows; the audit log keeps the figures they had.
 - A period can be closed only after its end date.
 
 ### 10.3 Paying salary
 
 - Create a Payment Entry: **Pay · Employee Salary**, party = employee, amount, payment account → **Submit**. That's it (Q5/Q7). GL: Dr 5100 Employee Salaries / Cr Bank.
-- The payment is linked to statements oldest-unpaid-first, or to a period you choose.
+- The payment is linked to statements oldest-unpaid-first, or to a period you choose. *As built:* the matching is derived when read (payments for a chosen period go there first, anything left over and all other payments fill the oldest unpaid periods), so cancelling a payment or reopening a period never leaves stale links.
 - **Employee salary balance** = Σ calculated (all periods) − Σ paid. Positive = we owe them. Negative = paid ahead, which the next period uses up. Partial payments and early payments need no special logic.
 - Statement payment status is derived: `unpaid`, `partially_paid`, `paid`, `overpaid`.
 
 ### 10.4 Salary cost per project
 
-When salary is paid, the 5100 debit is split across projects in proportion to the employee's attributed revenue per project in the paid period(s). Fixed salary with no attribution goes untagged (overhead). This makes project profitability come from the GL.
+When salary is paid, the 5100 debit is split across projects in proportion to the employee's attributed revenue per project in the paid period(s). Fixed salary with no attribution goes untagged (overhead). This makes project profitability come from the GL. *Moved to Phase 4* with project financials; Phase 3 salary payments post one untagged 5100 line per employee.
 
 ---
 
@@ -1384,4 +1377,4 @@ Change from v0.1: basic employees and minimal projects move into Phase 2, becaus
 
 ---
 
-**Next step:** confirm the interpretations in Section 2.2 (or just say "go"), and I'll start **Phase 1 — Foundation**. The follow-ups in Section 2.3 can be answered any time before Phase 3.
+**Progress:** Phase 1 ([notes](phase-1.md)), Phase 2 ([notes](phase-2.md)) and Phase 3 ([notes](phase-3.md)) are built. Next: **Phase 4 — Projects**.

@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { Card } from "@/components/ui/misc";
 import { api } from "@/lib/api";
-import { formatAmount } from "@/lib/money";
+import { formatAmount, formatShort } from "@/lib/money";
 import { currencyPrecision, useCurrencies } from "@/lib/queries";
 import { useCan } from "@/lib/session";
 import type { Page, PaymentEntry } from "@/lib/types";
@@ -29,7 +29,7 @@ export default function PaymentEntriesPage() {
   const can = useCan();
   const currencies = useCurrencies();
   const [page, setPage] = useState(1);
-  const [filters, setFilters] = useState({ q: "", status: "", direction: "", from: "", to: "" });
+  const [filters, setFilters] = useState({ q: "", status: "submitted", direction: "", from: "", to: "" });
   const setFilter = (k: keyof typeof filters, v: string) => {
     setFilters((f) => ({ ...f, [k]: v }));
     setPage(1);
@@ -73,6 +73,30 @@ export default function PaymentEntriesPage() {
         ),
       },
       {
+        id: "employees",
+        header: "Employees",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const e = row.original;
+          // Customer payments: the revenue split. Salary payments and tagged expenses: the employee.
+          if (e.allocations.length) {
+            return (
+              <div className="flex max-w-56 flex-col text-sm">
+                {e.allocations.map((a) => (
+                  <span key={a.employee_id} className="truncate">
+                    {a.employee_name}{" "}
+                    <span className="text-xs text-muted-foreground">
+                      {a.percent ? `${a.percent.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "")}%` : formatAmount(a.amount)}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            );
+          }
+          return <span className="text-sm text-muted-foreground">{e.employee_name ?? "—"}</span>;
+        },
+      },
+      {
         accessorKey: "description",
         header: "Description",
         enableSorting: false,
@@ -90,7 +114,7 @@ export default function PaymentEntriesPage() {
           return (
             <span className={`tabular block text-right ${out ? "" : e.direction === "receive" ? "text-success" : ""}`}>
               {out ? "−" : ""}
-              {formatAmount(e.amount, currencyPrecision(currencies.data, e.currency))} {e.currency}
+              {formatShort(e.amount, currencyPrecision(currencies.data, e.currency))} {e.currency}
             </span>
           );
         },

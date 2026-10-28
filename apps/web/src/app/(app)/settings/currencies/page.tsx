@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -20,15 +20,24 @@ import { formatDate } from "@/lib/utils";
 
 const DECIMAL = /^\d+(\.\d{1,12})?$/;
 
-function CurrencyDialog({ onClose }: { onClose: () => void }) {
+function CurrencyDialog({ currency, onClose }: { currency?: Currency; onClose: () => void }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState({ code: "", name: "", symbol: "", precision: 2, is_crypto: false });
+  const [form, setForm] = useState({
+    code: currency?.code ?? "",
+    name: currency?.name ?? "",
+    symbol: currency?.symbol ?? "",
+    precision: currency?.precision ?? 2,
+    is_crypto: currency?.is_crypto ?? false,
+  });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const create = useMutation({
-    mutationFn: () => api.post<Currency>("/currencies", { ...form, symbol: form.symbol || null }),
+    mutationFn: () =>
+      currency
+        ? api.patch<Currency>(`/currencies/${currency.code}`, { name: form.name, symbol: form.symbol || null, precision: form.precision })
+        : api.post<Currency>("/currencies", { ...form, symbol: form.symbol || null }),
     onSuccess: (c) => {
       qc.invalidateQueries({ queryKey: ["currencies"] });
-      toast.success(`${c.code} added`);
+      toast.success(currency ? `${c.code} updated` : `${c.code} added`);
       onClose();
     },
     onError: (err) => {
@@ -42,12 +51,14 @@ function CurrencyDialog({ onClose }: { onClose: () => void }) {
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add currency</DialogTitle>
-          <DialogDescription>Fiat currencies and crypto assets are both supported.</DialogDescription>
+          <DialogTitle>{currency ? `Edit ${currency.code}` : "Add currency"}</DialogTitle>
+          <DialogDescription>
+            {currency ? "The code and type can't change. Decimal places can only go up once the currency has been used." : "Fiat currencies and crypto assets are both supported."}
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
           <FormField id="cur_code" label="Code" required error={errors.code}>
-            <Input id="cur_code" value={form.code} maxLength={10} className="uppercase" onChange={(e) => setForm({ ...form, code: e.target.value })} />
+            <Input id="cur_code" value={form.code} maxLength={10} className="uppercase" disabled={!!currency} onChange={(e) => setForm({ ...form, code: e.target.value })} />
           </FormField>
           <FormField id="cur_name" label="Name" required error={errors.name}>
             <Input id="cur_name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -67,7 +78,7 @@ function CurrencyDialog({ onClose }: { onClose: () => void }) {
           </FormField>
         </div>
         <label className="flex items-center gap-2 text-sm">
-          <Checkbox checked={form.is_crypto} onChange={(e) => setForm({ ...form, is_crypto: e.target.checked })} />
+          <Checkbox checked={form.is_crypto} disabled={!!currency} onChange={(e) => setForm({ ...form, is_crypto: e.target.checked })} />
           This is a crypto asset
         </label>
         <DialogFooter>
@@ -75,7 +86,7 @@ function CurrencyDialog({ onClose }: { onClose: () => void }) {
             Cancel
           </Button>
           <Button loading={create.isPending} disabled={!form.code || !form.name} onClick={() => create.mutate()}>
-            Add currency
+            {currency ? "Save" : "Add currency"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -83,15 +94,20 @@ function CurrencyDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-function RateDialog({ currencies, base, onClose }: { currencies: Currency[]; base: string; onClose: () => void }) {
+function RateDialog({ currencies, base, rate: editing, onClose }: { currencies: Currency[]; base: string; rate?: ExchangeRate; onClose: () => void }) {
   const qc = useQueryClient();
-  const [from, setFrom] = useState(currencies.find((c) => c.code !== base)?.code ?? "");
-  const [to, setTo] = useState(base);
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [rate, setRate] = useState("");
+  const [from, setFrom] = useState(editing?.from_currency ?? currencies.find((c) => c.code !== base)?.code ?? "");
+  const [to, setTo] = useState(editing?.to_currency ?? base);
+  const [date, setDate] = useState(editing?.rate_date ?? new Date().toISOString().slice(0, 10));
+  const [rate, setRate] = useState(editing ? String(editing.rate).replace(/\.?0+$/, "") : "");
   const valid = from && to && from !== to && DECIMAL.test(rate) && Number(rate) > 0;
   const save = useMutation({
-    mutationFn: () => api.put<ExchangeRate>("/exchange-rates", { from_currency: from, to_currency: to, rate_date: date, rate }),
+    mutationFn: async () => {
+      const saved = await api.put<ExchangeRate>("/exchange-rates", { from_currency: from, to_currency: to, rate_date: date, rate });
+      // Moved to another pair or date: the old row would otherwise stay as a separate rate.
+      if (editing && saved.id !== editing.id) await api.delete(`/exchange-rates/${editing.id}`);
+      return saved;
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["exchange-rates"] });
       toast.success(`Rate saved: 1 ${from} = ${rate} ${to}`);
@@ -103,8 +119,10 @@ function RateDialog({ currencies, base, onClose }: { currencies: Currency[]; bas
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Exchange rate</DialogTitle>
-          <DialogDescription>Saving a rate for a pair and date that already exists replaces it.</DialogDescription>
+          <DialogTitle>{editing ? "Edit exchange rate" : "Exchange rate"}</DialogTitle>
+          <DialogDescription>
+            Saving a rate for a pair and date that already exists replaces it. Payments already submitted keep the rate they were posted with.
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
           <FormField id="rate_from" label="From">
@@ -156,6 +174,8 @@ export default function CurrenciesPage() {
   const qc = useQueryClient();
   const [addingCurrency, setAddingCurrency] = useState(false);
   const [addingRate, setAddingRate] = useState(false);
+  const [editingCurrency, setEditingCurrency] = useState<Currency | null>(null);
+  const [editingRate, setEditingRate] = useState<ExchangeRate | null>(null);
   const [ratePage, setRatePage] = useState(1);
 
   const company = useQuery({ queryKey: ["company"], queryFn: () => api.get<Company>("/settings/company") });
@@ -213,6 +233,17 @@ export default function CurrenciesPage() {
             <Badge variant="muted">Inactive</Badge>
           ),
       },
+      {
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) =>
+          manage && (
+            <Button variant="ghost" size="icon" aria-label={`Edit ${row.original.code}`} onClick={() => setEditingCurrency(row.original)}>
+              <Pencil />
+            </Button>
+          ),
+      },
     ],
     [base, manage, toggle],
   );
@@ -242,9 +273,14 @@ export default function CurrenciesPage() {
         enableSorting: false,
         cell: ({ row }) =>
           manage && (
-            <Button variant="ghost" size="icon" aria-label="Delete rate" onClick={() => removeRate.mutate(row.original)}>
-              <Trash2 />
-            </Button>
+            <div className="flex justify-end">
+              <Button variant="ghost" size="icon" aria-label="Edit rate" onClick={() => setEditingRate(row.original)}>
+                <Pencil />
+              </Button>
+              <Button variant="ghost" size="icon" aria-label="Delete rate" onClick={() => removeRate.mutate(row.original)}>
+                <Trash2 />
+              </Button>
+            </div>
           ),
       },
     ],
@@ -304,6 +340,8 @@ export default function CurrenciesPage() {
       </div>
       {addingCurrency && <CurrencyDialog onClose={() => setAddingCurrency(false)} />}
       {addingRate && <RateDialog currencies={active} base={base} onClose={() => setAddingRate(false)} />}
+      {editingCurrency && <CurrencyDialog currency={editingCurrency} onClose={() => setEditingCurrency(null)} />}
+      {editingRate && <RateDialog currencies={active} base={base} rate={editingRate} onClose={() => setEditingRate(null)} />}
     </>
   );
 }

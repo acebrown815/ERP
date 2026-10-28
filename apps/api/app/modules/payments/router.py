@@ -145,13 +145,16 @@ class EntryFields(BaseModel):
     paid_to_payment_account_id: uuid.UUID | None = None
     counter_account_id: uuid.UUID | None = None
     amount: Quantity = Field(gt=0)
-    exchange_rate: Rate = Decimal(1)
+    # Leave empty to use the saved rate for the date (Settings → Currencies & Rates).
+    exchange_rate: Rate | None = None
     received_amount: Quantity | None = None
     received_exchange_rate: Rate | None = None
     fee_amount: Quantity = Field(default=Decimal(0), ge=0)
     fee_paid_by: Literal["client", "company"] = "company"
     project_id: uuid.UUID | None = None
     employee_id: uuid.UUID | None = None
+    # Salary payments only: the period this pays first (default: the oldest unpaid one).
+    salary_period_id: uuid.UUID | None = None
     reference_no: str | None = Field(default=None, max_length=120)
     description: str | None = Field(default=None, max_length=2000)
 
@@ -182,6 +185,8 @@ class EntryUpdateIn(BaseModel):
     fee_paid_by: Literal["client", "company"] | None = None
     project_id: uuid.UUID | None = None
     employee_id: uuid.UUID | None = None
+    # Salary payments only: the period this pays first (default: the oldest unpaid one).
+    salary_period_id: uuid.UUID | None = None
     reference_no: str | None = Field(default=None, max_length=120)
     description: str | None = Field(default=None, max_length=2000)
     allocations: list[SplitRow] | None = Field(default=None, max_length=50)
@@ -217,7 +222,7 @@ class EntryOut(BaseModel):
     counter_account_id: uuid.UUID | None
     amount: Decimal
     currency: str
-    exchange_rate: Decimal
+    exchange_rate: Decimal | None
     received_amount: Decimal | None
     received_currency: str | None
     received_exchange_rate: Decimal | None
@@ -227,6 +232,7 @@ class EntryOut(BaseModel):
     eligible_amount_base: Decimal | None
     project_id: uuid.UUID | None
     employee_id: uuid.UUID | None
+    salary_period_id: uuid.UUID | None
     reference_no: str | None
     description: str | None
     journal_entry_id: uuid.UUID | None
@@ -242,6 +248,8 @@ class EntryOut(BaseModel):
     version: int
     party_name: str | None = None
     project_name: str | None = None
+    employee_name: str | None = None  # salary payments and employee-tagged expenses
+    salary_period_label: str | None = None
     allocations: list[AllocationOut] = []
 
 
@@ -264,6 +272,8 @@ class PaymentPreviewOut(BaseModel):
     base_currency: str
     base_amount: Decimal | None = None
     eligible_amount_base: Decimal | None = None
+    exchange_rate: Decimal | None = None  # the rate that will be used
+    received_exchange_rate: Decimal | None = None
     allocations: list[AllocationOut] = []
     allocated_total: Decimal | None = None
 
@@ -304,11 +314,15 @@ async def _entry_out(session: AsyncSession, pe: PaymentEntry, *, refresh: bool =
     out = EntryOut.model_validate(pe)
     parties = await lookup.resolve(session, "party", [pe.party_id])
     projects = await lookup.resolve(session, "project", [pe.project_id])
+    periods = await lookup.resolve(session, "salary_period", [pe.salary_period_id])
+    employee_names = await lookup.resolve(session, "employee", [pe.employee_id])
     rows = await attribution.for_payment(session, pe.id)
     return out.model_copy(
         update={
             "party_name": parties.get(pe.party_id) if pe.party_id else None,
             "project_name": projects.get(pe.project_id) if pe.project_id else None,
+            "salary_period_label": periods.get(pe.salary_period_id) if pe.salary_period_id else None,
+            "employee_name": employee_names.get(pe.employee_id) if pe.employee_id else None,
             "allocations": await _allocations_out(session, rows),
         }
     )
@@ -328,6 +342,8 @@ async def _preview(session: AsyncSession, pe: PaymentEntry, splits: list[Any]) -
         base_currency=base.code,
         base_amount=result.base_amount,
         eligible_amount_base=result.eligible_amount_base,
+        exchange_rate=result.exchange_rate,
+        received_exchange_rate=result.received_exchange_rate,
         lines=[
             PaymentPreviewLine(
                 account_id=p.account.id,
@@ -346,7 +362,9 @@ async def _preview(session: AsyncSession, pe: PaymentEntry, splits: list[Any]) -
         amounts = attribution.compute(splits, result.eligible_amount_base, base.precision) if splits else []
         out.allocations = await _allocations_out(session, splits, amounts)
         out.allocated_total = sum(amounts, Decimal(0))
-        if out.allocated_total != result.eligible_amount_base:
+        if not splits:
+            out.warnings.append("Not split between employees: this revenue won't count toward anyone's salary.")
+        elif out.allocated_total != result.eligible_amount_base:
             out.ok = False
             out.errors.append(
                 {
@@ -409,6 +427,18 @@ async def list_entries(
         rows = list((await session.execute(stmt.limit(20000))).scalars())
         parties = await lookup.resolve(session, "party", (r.party_id for r in rows))
         projects = await lookup.resolve(session, "project", (r.project_id for r in rows))
+        splits: dict[uuid.UUID, list[str]] = {}
+        for r in rows:
+            allocations = await attribution.for_payment(session, r.id)
+            if allocations:
+                names = await lookup.resolve(session, "employee", (a.employee_id for a in allocations))
+                splits[r.id] = [
+                    f"{names.get(a.employee_id, '?')} {a.percent.normalize():f}%"
+                    if a.percent is not None
+                    else f"{names.get(a.employee_id, '?')} {a.amount_base}"
+                    for a in allocations
+                ]
+        tagged = await lookup.resolve(session, "employee", (r.employee_id for r in rows))
         header = [
             "number",
             "posting_date",
@@ -416,6 +446,7 @@ async def list_entries(
             "direction",
             "party",
             "project",
+            "employees",
             "amount",
             "currency",
             "base_amount",
@@ -435,6 +466,7 @@ async def list_entries(
                     r.direction,
                     parties.get(r.party_id, ""),
                     projects.get(r.project_id, ""),
+                    "; ".join(splits.get(r.id, [])) or tagged.get(r.employee_id, ""),
                     r.amount,
                     r.currency,
                     r.base_amount,

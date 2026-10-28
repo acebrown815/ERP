@@ -1,0 +1,75 @@
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
+import { useState } from "react";
+
+import { PageHeader } from "@/components/erp/page-header";
+import { EmptyState, ErrorState, TableSkeleton } from "@/components/erp/states";
+import { PeriodRange, rangeQuery, type Range } from "@/components/salary/period-range";
+import { periodRange, SalaryStatus } from "@/components/salary/shared";
+import { Card } from "@/components/ui/misc";
+import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
+import { api } from "@/lib/api";
+import { formatAmount, sign } from "@/lib/money";
+import { useCompany, useSalaryPeriods } from "@/lib/queries";
+import type { SalaryReport } from "@/lib/types";
+
+export default function EmployeeSalaryReportPage() {
+  const base = useCompany().data?.base_currency ?? "USD";
+  const periods = useSalaryPeriods();
+  const [range, setRange] = useState<Range>({});
+  const q = useQuery({
+    queryKey: ["report-employee-salary", range],
+    queryFn: () => api.get<SalaryReport>("/reports/employee-salary", rangeQuery(range)),
+  });
+  const r = q.data;
+  return (
+    <>
+      <PageHeader
+        title="Employee salary report"
+        description={`Revenue, calculated salary and salary paid per employee and salary period (${base}). Balance is all periods to date.`}
+        actions={periods.data && <PeriodRange periods={periods.data} value={range} onChange={setRange} csvPath="/reports/employee-salary" />}
+      />
+      <Card className="overflow-x-auto">
+        {q.isError ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : !r ? <TableSkeleton /> : r.rows.length === 0 ? (
+          <EmptyState title="No salary in these periods" />
+        ) : (
+          <Table>
+            <THead>
+              <TR>
+                <TH>Employee</TH>
+                {r.periods.map((p) => <TH key={p.id} className="text-right" title={periodRange(p)}>{p.label}{p.status === "closed" ? " ✓" : ""}</TH>)}
+                <TH className="text-right">Calculated</TH>
+                <TH className="text-right">Paid</TH>
+                <TH className="text-right">Balance</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {r.rows.map((row) => (
+                <TR key={row.employee_id}>
+                  <TD><Link href={`/employees/${row.employee_id}`} className="font-medium hover:underline">{row.employee_name}</Link></TD>
+                  {row.by_period.map((c, i) => (
+                    <TD key={i} className="text-right align-top">
+                      {c ? (
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className="tabular font-medium">{formatAmount(c.calculated)}</span>
+                          <span className="tabular text-xs text-muted-foreground">on {formatAmount(c.revenue)}</span>
+                          <SalaryStatus status={c.status} />
+                        </div>
+                      ) : <span className="text-muted-foreground">—</span>}
+                    </TD>
+                  ))}
+                  <TD className="tabular text-right">{formatAmount(row.calculated)}</TD>
+                  <TD className="tabular text-right">{formatAmount(row.paid)}</TD>
+                  <TD className={`tabular text-right ${sign(row.balance) > 0 ? "font-semibold" : "text-muted-foreground"}`}>{formatAmount(row.balance)}</TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
+        )}
+      </Card>
+      <p className="mt-3 text-xs text-muted-foreground">✓ = closed period (final). Open periods show projected figures.</p>
+    </>
+  );
+}

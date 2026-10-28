@@ -15,7 +15,7 @@ import { StatusBadge } from "@/components/payments/entry-view";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardContent, CardHeader, CardTitle, Skeleton } from "@/components/ui/misc";
 import { api, ApiError } from "@/lib/api";
-import { formatAmount } from "@/lib/money";
+import { formatAmount, formatShort } from "@/lib/money";
 import { currencyPrecision, useCompany, useCurrencies, useParty } from "@/lib/queries";
 import { useCan } from "@/lib/session";
 import type { Page, Party, PaymentEntry } from "@/lib/types";
@@ -54,7 +54,7 @@ export default function PartyPage({ params }: { params: Promise<{ id: string }> 
       { accessorKey: "number", header: "Number", cell: ({ row }) => <Link className="font-mono text-xs text-primary hover:underline" href={`/accounting/payment-entries/${row.original.id}`}>{row.original.number}</Link> },
       { id: "project", header: "Project", cell: ({ row }) => row.original.project_name ?? "—" },
       { id: "amount", header: () => <span className="block text-right">Amount</span>, cell: ({ row }) => (
-        <span className="tabular block text-right">{row.original.direction === "pay" ? "−" : ""}{formatAmount(row.original.amount, currencyPrecision(currencies.data, row.original.currency))} {row.original.currency}</span>
+        <span className="tabular block text-right">{row.original.direction === "pay" ? "−" : ""}{formatShort(row.original.amount, currencyPrecision(currencies.data, row.original.currency))} {row.original.currency}</span>
       ) },
       { accessorKey: "status", header: "Status", cell: ({ row }) => <StatusBadge status={row.original.status} /> },
     ],

@@ -68,6 +68,63 @@ async def test_config_is_validated_per_group(admin) -> None:  # type: ignore[no-
     assert ok.status_code == 201
 
 
+async def test_list_and_color_settings_are_choices(admin) -> None:  # type: ignore[no-untyped-def]
+    typo = await admin.post(
+        BASE,
+        json={"group_key": "payment_method", "name": "Wise", "config": {"allowed_payment_account_kinds": ["bnak"]}},
+    )
+    assert typo.status_code == 422 and typo.json()["errors"][0]["field"] == "config.allowed_payment_account_kinds"
+    ok = await admin.post(
+        BASE,
+        json={
+            "group_key": "payment_method",
+            "name": "Wise",
+            "config": {"allowed_payment_account_kinds": ["bank", "credit_card"]},
+        },
+    )
+    assert ok.status_code == 201
+    assert (
+        await admin.post(BASE, json={"group_key": "event_type", "name": "Demo", "config": {"color": "#ff0000"}})
+    ).status_code == 422
+    assert (
+        await admin.post(
+            BASE, json={"group_key": "expense_category", "name": "Travel", "config": {"required_fields": ["receipt"]}}
+        )
+    ).status_code == 422
+
+
+async def test_payment_purpose_settings_are_choices(admin) -> None:  # type: ignore[no-untyped-def]
+    group = next(g for g in (await admin.get(f"{BASE}/groups")).json() if g["key"] == "payment_purpose")
+    assert group["config_choices"]["posting_rule"]["P1"] == "Supplier / operating expense"
+    assert set(group["system_locked"]) == {"direction", "posting_rule", "requires_attribution"}
+
+    def purpose(config: dict) -> dict:
+        return {"group_key": "payment_purpose", "name": "Hosting refunds", "config": config}
+
+    unknown = await admin.post(BASE, json=purpose({"direction": "receive", "posting_rule": "Z9"}))
+    assert unknown.status_code == 422 and unknown.json()["errors"][0]["field"] == "config.posting_rule"
+    mismatch = await admin.post(BASE, json=purpose({"direction": "pay", "posting_rule": "R2"}))
+    assert mismatch.status_code == 422 and "doesn't fit" in mismatch.json()["errors"][0]["message"]
+    split = await admin.post(
+        BASE, json=purpose({"direction": "receive", "posting_rule": "R2", "requires_attribution": True})
+    )
+    assert split.status_code == 422
+    ok = await admin.post(BASE, json=purpose({"direction": "receive", "posting_rule": "R2"}))
+    assert ok.status_code == 201, ok.text
+
+    # Built-in purposes: the rule the code relies on is fixed, the rest stays editable.
+    salary = await _by_key(admin, "payment_purpose", "employee_salary")
+    changed = await admin.patch(
+        f"{BASE}/{salary['id']}",
+        json={"version": salary["version"], "config": {**salary["config"], "posting_rule": "P1"}},
+    )
+    assert changed.status_code == 422 and changed.json()["errors"][0]["field"] == "config.posting_rule"
+    renamed = await admin.patch(
+        f"{BASE}/{salary['id']}", json={"version": salary["version"], "name": "Payroll", "config": salary["config"]}
+    )
+    assert renamed.status_code == 200, renamed.text
+
+
 async def test_system_values_can_be_renamed_but_protected_ones_not_deactivated(admin) -> None:  # type: ignore[no-untyped-def]
     cash = await _by_key(admin, "payment_method", "cash")
     renamed = await admin.patch(f"{BASE}/{cash['id']}", json={"version": cash["version"], "name": "Cash (USD)"})

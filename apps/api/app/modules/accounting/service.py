@@ -601,6 +601,23 @@ async def balances(
     return {acc: (d or ZERO, c or ZERO) for acc, d, c in (await session.execute(stmt)).all()}
 
 
+async def unit_balances(
+    session: AsyncSession, *, account_ids: list[uuid.UUID], date_to: date | None = None
+) -> dict[uuid.UUID, Decimal]:
+    """Net amount per account in the account's own currency (debit-positive), from posted lines."""
+    if not account_ids:
+        return {}
+    stmt = (
+        select(JournalLine.account_id, func.sum(JournalLine.amount_in_currency))
+        .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
+        .where(JournalLine.account_id.in_(account_ids))
+        .group_by(JournalLine.account_id)
+    )
+    if date_to:
+        stmt = stmt.where(JournalEntry.posting_date <= date_to)
+    return {acc: units or ZERO for acc, units in (await session.execute(stmt)).all()}
+
+
 async def carrying_rate(session: AsyncSession, account_id: uuid.UUID, on: date) -> Decimal | None:
     """Average cost (base per unit) of what a foreign-currency or crypto account holds on `on`.
 

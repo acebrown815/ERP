@@ -25,6 +25,8 @@ class GroupOut(BaseModel):
     permission: str
     can_manage: bool
     config_schema: dict[str, str]
+    config_choices: dict[str, dict[str, str]]
+    system_locked: list[str]
 
 
 class CategoryOut(BaseModel):
@@ -115,6 +117,8 @@ async def list_groups(user: CurrentUser = Depends(current_user)) -> list[GroupOu
             permission=g.permission,
             can_manage=user.can(g.permission),
             config_schema=g.config_schema,
+            config_choices=g.config_choices,
+            system_locked=list(g.system_locked),
         )
         for g in GROUPS.values()
     ]

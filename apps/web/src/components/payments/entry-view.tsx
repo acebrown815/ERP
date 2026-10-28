@@ -138,7 +138,7 @@ export function PaymentEntryView({ entry }: { entry: PaymentEntry }) {
               </p>
               {entry.currency !== base && entry.base_amount && (
                 <p className="tabular text-sm text-muted-foreground">
-                  = {formatAmount(entry.base_amount)} {base} at {entry.exchange_rate.replace(/\.?0+$/, "")}
+                  = {formatAmount(entry.base_amount)} {base} at {(entry.exchange_rate ?? "").replace(/\.?0+$/, "")}
                 </p>
               )}
             </div>
@@ -175,6 +175,7 @@ export function PaymentEntryView({ entry }: { entry: PaymentEntry }) {
                 </Row>
               )}
               {entry.project_name && <Row label="Project">{entry.project_name}</Row>}
+              {entry.salary_period_label && <Row label="Salary for">{entry.salary_period_label}</Row>}
               {entry.reference_no && <Row label="Reference">{entry.reference_no}</Row>}
               {entry.description && <Row label="Description">{entry.description}</Row>}
               {entry.amended_from_id && (

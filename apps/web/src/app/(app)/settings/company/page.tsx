@@ -1,6 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowRight } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -11,8 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, Skeleton } from "@/components/ui/misc";
 import { api, ApiError } from "@/lib/api";
-import { formatPeriodRange, upcomingPeriods } from "@/lib/salary-cycle";
 import { useCan } from "@/lib/session";
+import { ordinal } from "@/lib/utils";
 import type { Company, Currency } from "@/lib/types";
 
 const MONTHS = Array.from({ length: 12 }, (_, i) =>
@@ -28,7 +30,6 @@ type Form = {
   base_currency: string;
   timezone: string;
   fiscal_year_start_month: number;
-  salary_cycle_start_day: number;
   eligible_revenue_basis: string;
 };
 
@@ -42,7 +43,6 @@ function toForm(c: Company): Form {
     base_currency: c.base_currency,
     timezone: c.timezone,
     fiscal_year_start_month: c.fiscal_year_start_month,
-    salary_cycle_start_day: c.salary_cycle_start_day,
     eligible_revenue_basis: String(c.policies.eligible_revenue_basis ?? "net_of_company_fees"),
   };
 }
@@ -91,7 +91,6 @@ export default function CompanySettingsPage() {
   if (!form || !company.data) return <Skeleton className="h-96 w-full" />;
 
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm({ ...form, [key]: value });
-  const preview = upcomingPeriods(new Date(), form.salary_cycle_start_day, 3);
   const fiat = (currencies.data ?? []).filter((c) => !c.is_crypto);
 
   return (
@@ -192,43 +191,19 @@ export default function CompanySettingsPage() {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>Salary cycle</CardTitle>
-              <CardDescription>
-                Employee revenue and salary are counted per salary period. Choose the day each period starts.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
-              <FormField
-                id="salary_cycle_start_day"
-                label="Period starts on day"
-                error={errors.salary_cycle_start_day}
-                hint="1 = calendar month. 25 = the 25th through the 24th of the next month."
-              >
-                <Select
-                  id="salary_cycle_start_day"
-                  value={form.salary_cycle_start_day}
-                  onChange={(e) => set("salary_cycle_start_day", Number(e.target.value))}
-                >
-                  {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
-                    <option key={d} value={d}>
-                      {d === 1 ? "1 (calendar month)" : d}
-                    </option>
-                  ))}
-                </Select>
-              </FormField>
-              <div className="rounded-md border bg-muted/40 p-3" aria-live="polite">
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Upcoming periods</p>
-                <ul className="flex flex-col gap-1 text-sm">
-                  {preview.map((p) => (
-                    <li key={p.label} className="flex justify-between gap-4">
-                      <span className="font-medium">{p.label}</span>
-                      <span className="tabular text-muted-foreground">{formatPeriodRange(p)}</span>
-                    </li>
-                  ))}
-                </ul>
+            <CardHeader className="flex-row items-center justify-between gap-4">
+              <div>
+                <CardTitle>Salary cycle</CardTitle>
+                <CardDescription>
+                  {company.data.salary_cycle_start_day === 1
+                    ? "Salary periods are calendar months."
+                    : `Salary periods run from the ${ordinal(company.data.salary_cycle_start_day)} to the ${ordinal(company.data.salary_cycle_start_day - 1)} of the next month.`}
+                </CardDescription>
               </div>
-            </CardContent>
+              <Button type="button" variant="outline" asChild>
+                <Link href="/settings/salary-cycle">Salary cycle <ArrowRight /></Link>
+              </Button>
+            </CardHeader>
           </Card>
         </fieldset>
 

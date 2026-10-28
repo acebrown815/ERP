@@ -3,6 +3,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Plus, Search } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -152,10 +153,10 @@ export default function EmployeesPage() {
         accessorKey: "full_name",
         header: "Name",
         cell: ({ row }) => (
-          <button type="button" className="text-left" disabled={!can("employees.manage")} onClick={() => setDialog({ employee: row.original })}>
+          <Link href={`/employees/${row.original.id}`} className="block">
             <span className="block font-medium hover:underline">{row.original.full_name}</span>
             <span className="block text-xs text-muted-foreground">{row.original.job_title ?? row.original.email ?? ""}</span>
-          </button>
+          </Link>
         ),
       },
       { accessorKey: "number", header: "Number", cell: ({ getValue }) => <span className="font-mono text-xs">{getValue() as string}</span> },
@@ -167,6 +168,11 @@ export default function EmployeesPage() {
       { accessorKey: "start_date", header: "Started", cell: ({ row }) => formatDate(row.original.start_date) },
       { accessorKey: "status", header: "Status", cell: ({ row }) => <Badge variant={STATUS[row.original.status]?.variant}>{STATUS[row.original.status]?.label}</Badge> },
       { id: "user", header: "Sign-in", cell: ({ row }) => (row.original.user_id ? <Badge variant="outline">Linked</Badge> : <span className="text-xs text-muted-foreground">—</span>) },
+      ...(can("employees.manage")
+        ? [{ id: "edit", header: "", cell: ({ row }: { row: { original: Employee } }) => (
+            <Button variant="ghost" size="sm" onClick={() => setDialog({ employee: row.original })}>Edit</Button>
+          ) } as ColumnDef<Employee, unknown>]
+        : []),
     ],
     [can, departments.data, types.data],
   );

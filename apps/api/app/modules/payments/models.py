@@ -43,6 +43,7 @@ class PaymentEntry(UUIDPk, Authored, Base):
         CheckConstraint("fee_amount >= 0", name="fee_non_negative"),
         CheckConstraint("fee_paid_by IN ('client', 'company')", name="fee_paid_by_valid"),
         CheckConstraint("status <> 'submitted' OR journal_entry_id IS NOT NULL", name="submitted_posted"),
+        CheckConstraint("status = 'draft' OR exchange_rate IS NOT NULL", name="posted_rate_set"),
         Index("ix_payment_entries_date", "posting_date"),
         Index("ix_payment_entries_party", "party_id"),
         Index("ix_payment_entries_project", "project_id"),
@@ -74,7 +75,8 @@ class PaymentEntry(UUIDPk, Authored, Base):
 
     amount: Mapped[Decimal] = mapped_column(QUANTITY)
     currency: Mapped[str] = mapped_column(ForeignKey("currencies.code", ondelete="RESTRICT"))
-    exchange_rate: Mapped[Decimal] = mapped_column(RATE, default=Decimal(1))
+    # Empty on a draft = use the saved rate for the posting date (filled in on submit).
+    exchange_rate: Mapped[Decimal | None] = mapped_column(RATE)
     # Internal transfers only: what arrived on the destination side.
     received_amount: Mapped[Decimal | None] = mapped_column(QUANTITY)
     received_currency: Mapped[str | None] = mapped_column(ForeignKey("currencies.code", ondelete="RESTRICT"))
@@ -88,6 +90,8 @@ class PaymentEntry(UUIDPk, Authored, Base):
 
     project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id", ondelete="RESTRICT"))
     employee_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("employees.id", ondelete="RESTRICT"))
+    # Salary payments: the salary period paid first (otherwise the oldest unpaid one).
+    salary_period_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("salary_periods.id", ondelete="RESTRICT"))
     reference_no: Mapped[str | None] = mapped_column(String(120))
     description: Mapped[str | None] = mapped_column(Text)
 

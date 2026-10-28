@@ -59,7 +59,9 @@ export function AllocationEditor({
       <CardHeader className="flex-row flex-wrap items-start justify-between gap-3">
         <div>
           <CardTitle>Employee revenue split</CardTitle>
-          <CardDescription>Who this revenue is credited to. It counts toward their salary.</CardDescription>
+          <CardDescription>
+            Optional. Who this revenue is credited to; it counts toward their salary. If you add employees, the split must cover 100%.
+          </CardDescription>
         </div>
         <div className="flex gap-1 rounded-md border p-0.5 text-sm" role="radiogroup" aria-label="Split by">
           {(["percent", "amount"] as const).map((m) => (

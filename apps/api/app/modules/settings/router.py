@@ -37,6 +37,9 @@ class CompanyOut(BaseModel):
 
 
 class CompanyUpdateIn(BaseModel):
+    # Unknown fields are errors, not silently ignored (the salary cycle has its own endpoint).
+    model_config = ConfigDict(extra="forbid")
+
     version: int
     name: str | None = Field(default=None, min_length=1, max_length=200)
     legal_name: str | None = Field(default=None, max_length=200)
@@ -47,8 +50,6 @@ class CompanyUpdateIn(BaseModel):
     base_currency: str | None = Field(default=None, min_length=3, max_length=10)
     timezone: str | None = Field(default=None, max_length=64)
     fiscal_year_start_month: int | None = Field(default=None, ge=1, le=12)
-    # Editable here only until salary periods exist (Phase 3 moves it to a dedicated endpoint).
-    salary_cycle_start_day: int | None = Field(default=None, ge=1, le=28)
     policies: dict[str, str] | None = None
 
 

@@ -9,6 +9,7 @@ import { CategorySelect, useCategories, useCategoryGroups, type CategoryValue } 
 import { ConfirmDialog } from "@/components/erp/confirm-dialog";
 import { FormField } from "@/components/erp/form-field";
 import { PageHeader } from "@/components/erp/page-header";
+import { AccountPicker } from "@/components/erp/pickers";
 import { EmptyState, ErrorState, TableSkeleton } from "@/components/erp/states";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -16,6 +17,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Checkbox, Input, Select, Textarea } from "@/components/ui/input";
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/misc";
 import { api, ApiError, newIdempotencyKey } from "@/lib/api";
+import { useCan } from "@/lib/session";
 import type { Category, CategoryGroup } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -38,47 +40,136 @@ function toTree(categories: Category[]): Row[] {
   return out;
 }
 
+// Which part of the chart each group's default account comes from.
+const ACCOUNT_ROOTS: Record<string, string[]> = {
+  income_category: ["income"],
+  project_type: ["income"],
+  expense_category: ["expense", "asset"],
+  payment_purpose: ["income", "expense", "asset", "liability", "equity"],
+};
+
+// Readable names and help for every category setting.
+const SETTING_TEXT: Record<string, { label: string; hint?: string }> = {
+  allowed_payment_account_kinds: { label: "Allowed payment accounts", hint: "Payments with this method can only use these kinds of accounts." },
+  requires_reference_no: { label: "Require a reference number" },
+  direction: { label: "Direction" },
+  posting_rule: { label: "Posting rule", hint: "Decides which accounts the payment is posted to." },
+  default_account_id: { label: "Default account", hint: "Used when a payment with this value doesn't name an account." },
+  default_income_account_id: { label: "Default income account", hint: "Income account for customer payments on projects of this type." },
+  requires_attribution: { label: "Split revenue between employees", hint: "The payment can't be submitted until the split covers 100%." },
+  required_fields: { label: "Required on payments", hint: "Payments with this category can't be saved without these." },
+  color: { label: "Color" },
+  counts_as_unavailable: { label: "Person is unavailable during these events" },
+};
+
+const SWATCH: Record<string, string> = {
+  slate: "#64748b", red: "#ef4444", orange: "#f97316", amber: "#f59e0b", yellow: "#eab308", green: "#22c55e",
+  teal: "#14b8a6", blue: "#3b82f6", indigo: "#6366f1", violet: "#8b5cf6", pink: "#ec4899",
+};
+
+// A posting rule belongs to one direction: R… money in, P… money out, T… transfers.
+const RULE_DIRECTION: Record<string, string> = { R: "receive", P: "pay", T: "internal_transfer" };
+
 function ConfigFields({
-  schema,
+  group,
+  isSystem,
   value,
   onChange,
+  errors,
 }: {
-  schema: Record<string, string>;
+  group: CategoryGroup;
+  isSystem: boolean;
   value: Record<string, unknown>;
   onChange: (v: Record<string, unknown>) => void;
+  errors: Record<string, string>;
 }) {
-  const entries = Object.entries(schema);
+  const can = useCan();
+  const entries = Object.entries(group.config_schema);
   if (!entries.length) return null;
+  const choices = group.config_choices ?? {};
   return (
     <fieldset className="flex flex-col gap-3 rounded-md border p-3">
       <legend className="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Settings</legend>
+      {isSystem && group.system_locked.length > 0 && (
+        <p className="text-xs text-muted-foreground">Built-in value: settings the system relies on are fixed. Add a custom value to use different ones.</p>
+      )}
       {entries.map(([key, kind]) => {
         const id = `cfg-${key}`;
-        const label = key.replaceAll("_", " ");
+        const text = SETTING_TEXT[key] ?? { label: key.replaceAll("_", " ") };
+        const locked = isSystem && group.system_locked.includes(key);
+        const error = errors[`config.${key}`];
+        const current = value[key];
         const set = (v: unknown) => {
           const next = { ...value };
-          if (v === "" || v === undefined || (Array.isArray(v) && !v.length)) delete next[key];
+          if (v === "" || v === undefined || v === null || (Array.isArray(v) && !v.length)) delete next[key];
           else next[key] = v;
+          // Changing direction drops a posting rule that no longer fits.
+          if (key === "direction" && typeof next.posting_rule === "string" && RULE_DIRECTION[next.posting_rule[0]!] !== v) delete next.posting_rule;
           onChange(next);
         };
+
         if (kind === "bool") {
           return (
-            <label key={key} className="flex items-center gap-2 text-sm capitalize">
-              <Checkbox checked={value[key] === true} onChange={(e) => set(e.target.checked || undefined)} />
-              {label}
-            </label>
+            <div key={key} className="flex flex-col gap-1">
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={current === true} disabled={locked} onChange={(e) => set(e.target.checked || undefined)} />
+                {text.label}
+              </label>
+              {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : text.hint && <p className="text-xs text-muted-foreground">{text.hint}</p>}
+            </div>
           );
         }
-        const current = value[key];
+        if (kind === "uuid" && key.endsWith("account_id")) {
+          return (
+            <FormField key={key} id={id} label={text.label} error={error}
+              hint={can("accounts.read") ? text.hint : "You need access to the chart of accounts to change this."}>
+              {can("accounts.read") ? (
+                <AccountPicker id={id} roots={ACCOUNT_ROOTS[group.key]} excludeMoney value={(current as string) ?? null} onChange={(v) => set(v ?? undefined)} placeholder="None" />
+              ) : (
+                <Input id={id} disabled value={current ? "Set" : "None"} />
+              )}
+            </FormField>
+          );
+        }
+        const options = choices[key];
+        if (options && kind === "str_list") {
+          const selected = Array.isArray(current) ? (current as string[]) : [];
+          return (
+            <FormField key={key} id={id} label={text.label} error={error} hint={text.hint}>
+              <div id={id} className="flex flex-wrap gap-x-4 gap-y-2">
+                {Object.entries(options).map(([v, label]) => (
+                  <label key={v} className="flex items-center gap-2 text-sm">
+                    <Checkbox checked={selected.includes(v)} disabled={locked}
+                      onChange={(e) => set(e.target.checked ? [...selected, v] : selected.filter((x) => x !== v))} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </FormField>
+          );
+        }
+        if (options) {
+          const direction = typeof value.direction === "string" ? value.direction : null;
+          const visible = Object.entries(options).filter(([v]) => key !== "posting_rule" || !direction || RULE_DIRECTION[v[0]!] === direction);
+          return (
+            <FormField key={key} id={id} label={text.label} error={error} hint={locked ? "Fixed on built-in values" : text.hint}>
+              <div className="flex items-center gap-2">
+                {key === "color" && typeof current === "string" && (
+                  <span aria-hidden className="size-5 shrink-0 rounded-full border" style={{ background: SWATCH[current] }} />
+                )}
+                <Select id={id} value={(current as string) ?? ""} disabled={locked} onChange={(e) => set(e.target.value)}>
+                  <option value="">{key === "posting_rule" && !direction ? "Choose a direction first…" : "None"}</option>
+                  {visible.map(([v, label]) => (
+                    <option key={v} value={v}>{key === "posting_rule" ? `${v} · ${label}` : label}</option>
+                  ))}
+                </Select>
+              </div>
+            </FormField>
+          );
+        }
         return (
-          <FormField key={key} id={id} label={label} hint={kind === "str_list" ? "Comma-separated" : kind === "uuid" ? "Set in Phase 2 when accounts exist" : undefined}>
-            <Input
-              id={id}
-              value={Array.isArray(current) ? current.join(", ") : ((current as string) ?? "")}
-              onChange={(e) =>
-                set(kind === "str_list" ? e.target.value.split(",").map((s) => s.trim()).filter(Boolean) : e.target.value.trim())
-              }
-            />
+          <FormField key={key} id={id} label={text.label} error={error} hint={text.hint}>
+            <Input id={id} value={(current as string) ?? ""} disabled={locked} onChange={(e) => set(e.target.value.trim())} />
           </FormField>
         );
       })}
@@ -166,7 +257,7 @@ function CategoryDialog({
           <FormField id="cat_desc" label="Description">
             <Textarea id="cat_desc" value={description} onChange={(e) => setDescription(e.target.value)} />
           </FormField>
-          <ConfigFields schema={group.config_schema} value={config} onChange={setConfig} />
+          <ConfigFields group={group} isSystem={!!editing?.is_system} value={config} onChange={setConfig} errors={errors} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
