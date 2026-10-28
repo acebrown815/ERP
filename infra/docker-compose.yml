@@ -1,0 +1,83 @@
+# Full stack: docker compose -f infra/docker-compose.yml --env-file .env up --build
+# First run:   docker compose -f infra/docker-compose.yml exec api python -m app.cli seed --company "Your Co"
+#              docker compose -f infra/docker-compose.yml exec -e ERP_ADMIN_PASSWORD=... api python -m app.cli create-admin --email you@company.com
+name: erp
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: erp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: erp
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erp -d erp"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    build: ../apps/api
+    command: ["python", "-m", "app.cli", "migrate"]
+    environment: &api-env
+      ERP_ENV: ${ERP_ENV:-prod}
+      ERP_DATABASE_URL: postgresql+asyncpg://erp:${POSTGRES_PASSWORD}@postgres:5432/erp
+      ERP_COOKIE_SECURE: ${ERP_COOKIE_SECURE:-true}
+      ERP_LOG_JSON: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: ../apps/api
+    environment: *api-env
+    volumes:
+      - attachments:/data/attachments
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 10s
+      retries: 6
+    restart: unless-stopped
+
+  worker:
+    build: ../apps/api
+    command: ["python", "-m", "app.worker"]
+    environment: *api-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  web:
+    build: ../apps/web
+    environment:
+      API_URL: http://api:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      ERP_DOMAIN: ${ERP_DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      - web
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  attachments:
+  caddy_data:

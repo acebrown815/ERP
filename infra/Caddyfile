@@ -1,0 +1,22 @@
+{$ERP_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# API and the web app share one origin, so session cookies need no CORS.
+	handle /api/* {
+		request_body {
+			max_size 30MB
+		}
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

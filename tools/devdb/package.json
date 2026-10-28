@@ -1,0 +1,14 @@
+{
+  "name": "devdb",
+  "private": true,
+  "description": "Local PostgreSQL 16 for development and tests when Docker is not available",
+  "scripts": {
+    "start": "node devdb.mjs start",
+    "stop": "node devdb.mjs stop",
+    "status": "node devdb.mjs status"
+  },
+  "dependencies": {
+    "@embedded-postgres/windows-x64": "16.14.0-beta.17",
+    "pg": "^8.13.1"
+  }
+}
