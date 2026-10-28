@@ -69,10 +69,10 @@ export const NAV: NavSection[] = [
     icon: Briefcase,
     items: [
       { label: "All Projects", href: "/projects", anyOf: ["projects.read"] },
-      { label: "Tasks", href: "/projects/tasks", anyOf: ["projects.read"], phase: 4 },
-      { label: "Kanban Board", href: "/projects/board", anyOf: ["projects.read"], phase: 4 },
-      { label: "Gantt Timeline", href: "/projects/timeline", anyOf: ["projects.read"], phase: 4 },
-      { label: "Project Financials", href: "/projects/financials", anyOf: ["projects.read_financials"], phase: 4 },
+      { label: "Tasks", href: "/projects/tasks", anyOf: ["projects.read"] },
+      { label: "Kanban Board", href: "/projects/board", anyOf: ["projects.read"] },
+      { label: "Gantt Timeline", href: "/projects/timeline", anyOf: ["projects.read"] },
+      { label: "Project Financials", href: "/projects/financials", anyOf: ["projects.read_financials"] },
     ],
   },
   {
@@ -90,7 +90,7 @@ export const NAV: NavSection[] = [
     items: [
       { label: "Financial Reports", href: "/accounting/statements", anyOf: ["reports.financial"] },
       { label: "Employee Salary Report", href: "/reports/employees", anyOf: ["salary.read"] },
-      { label: "Project Reports", href: "/reports/projects", anyOf: ["projects.read"], phase: 5 },
+      { label: "Project Reports", href: "/projects/financials", anyOf: ["projects.read_financials"] },
     ],
   },
   {

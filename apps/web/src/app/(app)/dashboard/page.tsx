@@ -26,7 +26,7 @@ const PHASES = [
   { n: 5, title: "Calendar & Reporting", body: "Calendars, dashboards, employee and project reports, exports." },
   { n: 6, title: "Production readiness", body: "Hardening, backups, monitoring, documentation." },
 ];
-const CURRENT_PHASE = 3;
+const CURRENT_PHASE = 4;
 
 function Kpi({ label, value, base, tone, hint }: { label: string; value: string | undefined; base: string; tone?: "good" | "bad"; hint?: string }) {
   return (
@@ -220,6 +220,7 @@ export default function DashboardPage() {
     { href: "/me", label: "My salary", show: "salary.read" in me.permissions && !finance },
     { href: "/employees/salary", label: "Salary board", show: "salary.read" in me.permissions && finance },
     { href: "/employees", label: "Employees", show: "employees.read" in me.permissions },
+    { href: "/projects/tasks", label: "My tasks", show: "projects.read" in me.permissions },
     { href: "/projects", label: "Projects", show: "projects.read" in me.permissions },
     { href: "/settings/imports", label: "Import existing data", show: "imports.manage" in me.permissions },
     { href: "/settings/company", label: "Company settings", show: true },

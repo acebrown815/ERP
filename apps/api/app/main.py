@@ -9,6 +9,7 @@ from app.models import import_all_models
 from app.modules.accounting.router import router as accounting_router
 from app.modules.attachments.router import router as attachments_router
 from app.modules.audit.router import router as audit_router
+from app.modules.auth import setup as auth_setup
 from app.modules.auth.router import auth_router, users_router
 from app.modules.categories.router import router as categories_router
 from app.modules.compensation import setup as compensation_setup
@@ -21,16 +22,21 @@ from app.modules.parties.router import router as parties_router
 from app.modules.payments import setup as payments_setup
 from app.modules.payments.router import router as payments_router
 from app.modules.projects import setup as projects_setup
+from app.modules.projects.router import milestones_router
 from app.modules.projects.router import router as projects_router
 from app.modules.rbac.router import router as rbac_router
+from app.modules.reporting.router import router as reporting_router
 from app.modules.salary import setup as salary_setup
 from app.modules.salary.router import router as salary_router
 from app.modules.settings import setup as settings_setup
 from app.modules.settings.router import router as settings_router
+from app.modules.tasks import setup as tasks_setup
+from app.modules.tasks.router import router as tasks_router
 
 API_PREFIX = "/api/v1"
 
 SETUPS = (
+    auth_setup,
     settings_setup,
     parties_setup,
     employees_setup,
@@ -38,6 +44,7 @@ SETUPS = (
     payments_setup,
     compensation_setup,
     salary_setup,
+    tasks_setup,
 )
 ROUTERS = (
     auth_router,
@@ -51,10 +58,13 @@ ROUTERS = (
     parties_router,
     employees_router,
     projects_router,
+    milestones_router,
     payments_router,
     imports_router,
     compensation_router,
     salary_router,
+    tasks_router,
+    reporting_router,
 )
 
 
@@ -66,7 +76,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="ERP API",
-        version="0.3.0",
+        version="0.4.0",
         docs_url="/api/docs",
         redoc_url=None,
         openapi_url="/api/openapi.json",

@@ -11,6 +11,7 @@ from app.modules.accounting.service import (
     get_entry,
     post_journal,
     prepare_lines,
+    project_ledger,
     reverse_journal,
     seed,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "get_entry",
     "post_journal",
     "prepare_lines",
+    "project_ledger",
     "reverse_journal",
     "seed",
 ]

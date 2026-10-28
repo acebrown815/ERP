@@ -234,3 +234,15 @@ async def active_for_employee(
             )
         ).scalars()
     )
+
+
+async def project_totals(session: AsyncSession, project_ids: list[uuid.UUID]) -> dict[uuid.UUID, Decimal]:
+    """Revenue credited to employees per project (active allocations)."""
+    if not project_ids:
+        return {}
+    rows = await session.execute(
+        select(RevenueAllocation.project_id, func.sum(RevenueAllocation.amount_base))
+        .where(RevenueAllocation.status == "active", RevenueAllocation.project_id.in_(project_ids))
+        .group_by(RevenueAllocation.project_id)
+    )
+    return dict(rows.all())  # type: ignore[arg-type]

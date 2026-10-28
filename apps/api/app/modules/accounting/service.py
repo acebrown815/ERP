@@ -678,3 +678,45 @@ async def seed(session: AsyncSession) -> int:
         if code in codes:
             await categories.set_config_default(session, group, key, config_key, str(codes[code]))
     return created
+
+
+@dataclass
+class ProjectLedger:
+    income: Decimal = ZERO  # credit - debit on income accounts
+    expenses: Decimal = ZERO  # debit - credit on expense accounts, excluding salaries
+    salary: Decimal = ZERO  # debit - credit on the salary expense account
+
+
+async def project_ledger(
+    session: AsyncSession, project_ids: list[uuid.UUID], *, date_from: date | None = None, date_to: date | None = None
+) -> dict[uuid.UUID, ProjectLedger]:
+    """Income, direct expenses and salary cost per project, from posted lines tagged with the project."""
+    out = {p: ProjectLedger() for p in project_ids}
+    if not project_ids:
+        return out
+    stmt = (
+        select(
+            JournalLine.project_id,
+            Account.root_type,
+            Account.system_key,
+            func.sum(JournalLine.debit_base),
+            func.sum(JournalLine.credit_base),
+        )
+        .join(Account, Account.id == JournalLine.account_id)
+        .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
+        .where(JournalLine.project_id.in_(project_ids), Account.root_type.in_(("income", "expense")))
+        .group_by(JournalLine.project_id, Account.root_type, Account.system_key)
+    )
+    if date_from:
+        stmt = stmt.where(JournalEntry.posting_date >= date_from)
+    if date_to:
+        stmt = stmt.where(JournalEntry.posting_date <= date_to)
+    for pid, root_type, system_key, d, c in (await session.execute(stmt)).all():
+        row = out[pid]
+        if root_type == "income":
+            row.income += (c or ZERO) - (d or ZERO)
+        elif system_key == "salary_expense":
+            row.salary += (d or ZERO) - (c or ZERO)
+        else:
+            row.expenses += (d or ZERO) - (c or ZERO)
+    return out

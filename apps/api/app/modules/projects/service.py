@@ -12,7 +12,7 @@ from app.modules.auth.api import CurrentUser
 from app.modules.categories import api as categories
 from app.modules.employees import api as employees
 from app.modules.parties import api as parties
-from app.modules.projects.models import Project, ProjectMember
+from app.modules.projects.models import Milestone, Project, ProjectMember
 from app.modules.rbac.api import Scope
 from app.modules.settings import api as settings
 
@@ -26,6 +26,9 @@ EDITABLE = (
     "start_date",
     "deadline",
     "contract_value",
+    "budget",
+    "priority",
+    "completion_override",
     "currency",
     "status",
 )
@@ -241,3 +244,96 @@ async def find_by_name(session: AsyncSession, name: str) -> Project | None:
     return (
         await session.execute(select(Project).where(func.lower(Project.name) == name.strip().lower()).limit(1))
     ).scalar_one_or_none()
+
+
+async def can_manage_id(session: AsyncSession, user: CurrentUser, project_id: uuid.UUID) -> Project:
+    project = await get(session, project_id)
+    await can_manage(session, user, project)
+    return project
+
+
+async def is_team_member(session: AsyncSession, user: CurrentUser, project_id: uuid.UUID) -> bool:
+    return project_id in await visible_project_ids(session, user)
+
+
+# ---- milestones ------------------------------------------------------------------------------------
+
+MILESTONE_FIELDS = ("name", "description", "due_date", "status")
+
+
+async def milestones(session: AsyncSession, project_id: uuid.UUID) -> list[Milestone]:
+    return list(
+        (
+            await session.execute(
+                select(Milestone)
+                .where(Milestone.project_id == project_id)
+                .order_by(Milestone.due_date.asc().nulls_last(), Milestone.name)
+            )
+        ).scalars()
+    )
+
+
+async def get_milestone(session: AsyncSession, milestone_id: uuid.UUID) -> Milestone:
+    m = await session.get(Milestone, milestone_id)
+    if m is None:
+        raise NotFound("Milestone not found")
+    return m
+
+
+async def create_milestone(
+    session: AsyncSession, *, actor_id: uuid.UUID, project_id: uuid.UUID, data: dict[str, Any]
+) -> Milestone:
+    await get(session, project_id)
+    m = Milestone(project_id=project_id, created_by=actor_id, updated_by=actor_id, **data)
+    session.add(m)
+    await session.flush()
+    await audit.record(
+        session,
+        actor_id=actor_id,
+        action="milestone.created",
+        entity_type="project",
+        entity_id=project_id,
+        after={k: getattr(m, k) for k in MILESTONE_FIELDS},
+    )
+    return m
+
+
+async def update_milestone(
+    session: AsyncSession, *, actor_id: uuid.UUID, milestone_id: uuid.UUID, version: int, changes: dict[str, Any]
+) -> Milestone:
+    m = await get_milestone(session, milestone_id)
+    if m.version != version:
+        raise PreconditionFailed()
+    before = {k: getattr(m, k) for k in MILESTONE_FIELDS}
+    for k, v in changes.items():
+        setattr(m, k, v)
+    m.version += 1
+    m.updated_by = actor_id
+    await session.flush()
+    b, a = audit.diff(before, {k: getattr(m, k) for k in MILESTONE_FIELDS})
+    if a:
+        await audit.record(
+            session,
+            actor_id=actor_id,
+            action="milestone.updated",
+            entity_type="project",
+            entity_id=m.project_id,
+            before=b,
+            after=a,
+        )
+    return m
+
+
+async def delete_milestone(session: AsyncSession, *, actor_id: uuid.UUID, milestone_id: uuid.UUID) -> None:
+    """Tasks keep existing; their milestone link is cleared (FK ON DELETE SET NULL)."""
+    m = await get_milestone(session, milestone_id)
+    await session.delete(m)
+    await session.flush()
+    await audit.record(
+        session,
+        actor_id=actor_id,
+        action="milestone.deleted",
+        entity_type="project",
+        entity_id=m.project_id,
+        before={"name": m.name, "due_date": m.due_date},
+    )

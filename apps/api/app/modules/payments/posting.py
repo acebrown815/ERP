@@ -13,13 +13,14 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFound, ValidationFailed, field_error
-from app.core.money import quantize
+from app.core.money import allocate, quantize
 from app.modules.accounting import api as accounting
 from app.modules.categories import api as categories
 from app.modules.employees import api as employees
 from app.modules.parties import api as parties
 from app.modules.payments.models import PaymentAccount, PaymentEntry
 from app.modules.projects import api as projects
+from app.modules.salary import api as salary
 from app.modules.settings import api as settings
 
 ZERO = Decimal(0)
@@ -302,15 +303,36 @@ async def build(session: AsyncSession, pe: PaymentEntry) -> Posting:
     elif pe.direction == "pay":
         assert src and counter
         counter_base, fee_base = q(pe.amount * rate), q(company_fee * rate)
-        lines.append(
-            accounting.LineIn(
-                account_id=counter.id,
-                debit=counter_base,
-                category_id=pe.category_id,
-                description=pe.description,
-                **tags,
+        weights = (
+            await salary.project_weights(
+                session, employee_id=employee_id, salary_period_id=pe.salary_period_id, on=pe.posting_date
             )
+            if rule == "P2" and employee_id and not pe.project_id
+            else []
         )
+        if weights:
+            # Salary cost per project (Section 10.4): one expense line per project the employee earned on.
+            for (project_id, _), part in zip(weights, allocate(counter_base, [w for _, w in weights], bp), strict=True):
+                if part:
+                    lines.append(
+                        accounting.LineIn(
+                            account_id=counter.id,
+                            debit=part,
+                            category_id=pe.category_id,
+                            description=pe.description,
+                            **{**tags, "project_id": project_id},
+                        )
+                    )
+        else:
+            lines.append(
+                accounting.LineIn(
+                    account_id=counter.id,
+                    debit=counter_base,
+                    category_id=pe.category_id,
+                    description=pe.description,
+                    **tags,
+                )
+            )
         if fee_base:
             lines.append(
                 accounting.LineIn(

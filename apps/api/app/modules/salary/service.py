@@ -715,3 +715,47 @@ async def periods_between(session: AsyncSession, first_id: uuid.UUID, last_id: u
 
 async def employee_names(session: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
     return await employees.names(session, ids)
+
+
+# ---- salary cost per project -----------------------------------------------------------------------
+
+
+async def project_weights(
+    session: AsyncSession, *, employee_id: uuid.UUID, salary_period_id: uuid.UUID | None, on: date
+) -> list[tuple[uuid.UUID | None, Decimal]]:
+    """How a salary payment's cost splits across projects (Section 10.4): in proportion to the revenue credited
+    to the employee per project in the period it pays (the chosen one, else the oldest unpaid, else the one
+    containing `on`). Empty when that period has no revenue (fixed pay: overhead, untagged)."""
+    period: SalaryPeriod | None = await get_period(session, salary_period_id) if salary_period_id else None
+    if period is None:
+        bal = (await balances(session, [employee_id], until=on)).get(employee_id)
+        unpaid = [x for x in (bal.lines if bal else []) if max(x.calculated, ZERO) > x.paid]
+        period = unpaid[0].period if unpaid else await period_for(session, on)
+    rows = await attribution.employee_project_totals(
+        session, date_from=period.start_date, date_to=period.end_date, employee_ids=[employee_id]
+    )
+    return [(project_id, revenue) for _, project_id, revenue, _ in rows if revenue and revenue > 0]
+
+
+async def project_salary(
+    session: AsyncSession, project_ids: list[uuid.UUID], *, until: date | None = None
+) -> dict[uuid.UUID, tuple[Decimal, Decimal]]:
+    """(salary earned, salary paid) attributable to each project: every period's statement shared by the
+    employee's revenue per project in that period. Earned - paid = salary owed for the project."""
+    out: dict[uuid.UUID, tuple[Decimal, Decimal]] = {p: (ZERO, ZERO) for p in project_ids}
+    if not project_ids:
+        return out
+    bal = await balances(session, None, until=until)
+    for emp, b in bal.items():
+        for line in b.lines:
+            if line.gross_revenue <= 0:
+                continue
+            rows = await attribution.employee_project_totals(
+                session, date_from=line.period.start_date, date_to=line.period.end_date, employee_ids=[emp]
+            )
+            for _, project_id, revenue, _ in rows:
+                if project_id in out and revenue:
+                    share = revenue / line.gross_revenue
+                    earned, paid = out[project_id]
+                    out[project_id] = (earned + max(line.calculated, ZERO) * share, paid + line.paid * share)
+    return {p: (quantize(e, 2), quantize(d, 2)) for p, (e, d) in out.items()}

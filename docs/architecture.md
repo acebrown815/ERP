@@ -1,6 +1,6 @@
 # ERP for a Software Services Company — Architecture & Design (v0.6)
 
-Status: **Phases 1–3 built. All business rules agreed, including the salary follow-ups (Section 2.3).**
+Status: **Phases 1–4 built. All business rules agreed, including the salary follow-ups (Section 2.3).**
 Date: 2026-10-27 · v0.6 2026-10-28 (Phase 3 implementation notes)
 
 Contents
@@ -1020,7 +1020,7 @@ stateDiagram-v2
 
 ### 10.4 Salary cost per project
 
-When salary is paid, the 5100 debit is split across projects in proportion to the employee's attributed revenue per project in the paid period(s). Fixed salary with no attribution goes untagged (overhead). This makes project profitability come from the GL. *Moved to Phase 4* with project financials; Phase 3 salary payments post one untagged 5100 line per employee.
+When salary is paid, the 5100 debit is split across projects in proportion to the employee's attributed revenue per project in the paid period(s). Fixed salary with no attribution goes untagged (overhead). This makes project profitability come from the GL. *As built (Phase 4):* the weights are the employee's revenue per project in the period the payment pays (the chosen one, else the oldest unpaid, else the current one). Salary payments recorded before Phase 4 keep their untagged line.
 
 ---
 
@@ -1377,4 +1377,4 @@ Change from v0.1: basic employees and minimal projects move into Phase 2, becaus
 
 ---
 
-**Progress:** Phase 1 ([notes](phase-1.md)), Phase 2 ([notes](phase-2.md)) and Phase 3 ([notes](phase-3.md)) are built. Next: **Phase 4 — Projects**.
+**Progress:** Phase 1 ([notes](phase-1.md)), Phase 2 ([notes](phase-2.md)), Phase 3 ([notes](phase-3.md)) and Phase 4 ([notes](phase-4.md)) are built. Next: **Phase 5 — Calendar & Reporting**.

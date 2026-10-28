@@ -3,7 +3,7 @@
 Web-based ERP for a software services company: double-entry accounting, payments, employee revenue attribution, salary, projects and calendars.
 
 - Design: [docs/architecture.md](docs/architecture.md)
-- Progress: [docs/phase-1.md](docs/phase-1.md), [docs/phase-2.md](docs/phase-2.md), [docs/phase-3.md](docs/phase-3.md)
+- Progress: [docs/phase-1.md](docs/phase-1.md), [docs/phase-2.md](docs/phase-2.md), [docs/phase-3.md](docs/phase-3.md), [docs/phase-4.md](docs/phase-4.md)
 
 ```
 apps/api     FastAPI modular monolith (Python, SQLAlchemy, Alembic, PostgreSQL)

@@ -11,6 +11,7 @@ from app.modules.attribution.service import (
     employee_project_totals,
     employee_totals,
     for_payment,
+    project_totals,
     proposal,
     replace_draft,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "employee_project_totals",
     "employee_totals",
     "for_payment",
+    "project_totals",
     "proposal",
     "replace_draft",
 ]

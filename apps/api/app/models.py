@@ -18,4 +18,5 @@ def import_all_models() -> None:
     import app.modules.projects.models
     import app.modules.rbac.models
     import app.modules.salary.models
-    import app.modules.settings.models  # noqa: F401
+    import app.modules.settings.models
+    import app.modules.tasks.models  # noqa: F401
