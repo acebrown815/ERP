@@ -62,7 +62,9 @@ class StatementOut(BaseModel):
     period_status: str
     employee_id: uuid.UUID
     employee_name: str
-    revenue: Decimal
+    gross_revenue: Decimal  # credited from customer payments
+    expenses: Decimal  # expenses tagged to the employee
+    revenue: Decimal  # net = gross_revenue - expenses; the formula's basis (a negative net pays no share)
     formula_id: uuid.UUID | None
     formula_name: str | None
     formula_version_no: int | None
@@ -135,13 +137,24 @@ class ProjectRevenue(BaseModel):
     payments: int
 
 
+class EmployeeExpenseOut(BaseModel):
+    payment_entry_id: uuid.UUID
+    payment_number: str | None
+    date: date
+    project_name: str | None
+    amount: Decimal
+
+
 class EmployeeRevenueOut(BaseModel):
     employee_id: uuid.UUID
     employee_name: str
     period: SalaryPeriodOut
-    total: Decimal
+    total: Decimal  # gross: credited from customer payments
+    expenses_total: Decimal
+    net: Decimal
     by_project: list[ProjectRevenue]
     allocations: list[RevenueAllocationOut]
+    expenses: list[EmployeeExpenseOut]
 
 
 class AdjustmentOut(BaseModel):
@@ -197,8 +210,10 @@ class ReportPeriod(BaseModel):
 class RevenueReportRow(BaseModel):
     employee_id: uuid.UUID
     employee_name: str
-    by_period: list[Decimal]
-    total: Decimal
+    by_period: list[Decimal]  # net = gross - expenses
+    gross_by_period: list[Decimal]
+    expenses_by_period: list[Decimal]
+    total: Decimal  # net
 
 
 class RevenueReportOut(BaseModel):
@@ -209,7 +224,9 @@ class RevenueReportOut(BaseModel):
 
 
 class SalaryReportCell(BaseModel):
-    revenue: Decimal
+    revenue: Decimal  # net
+    gross_revenue: Decimal
+    expenses: Decimal
     calculated: Decimal
     paid: Decimal
     status: str
@@ -268,6 +285,8 @@ def _statement(line: service.Line, name: str) -> dict[str, Any]:
         "period_status": p.status,
         "employee_id": line.employee_id,
         "employee_name": name,
+        "gross_revenue": line.gross_revenue,
+        "expenses": line.expenses,
         "revenue": line.revenue,
         "formula_id": line.formula_id,
         "formula_name": line.formula_name,
@@ -482,8 +501,17 @@ async def employee_revenue(
     rows = await attribution.active_for_employee(
         session, employee_id=employee_id, date_from=period.start_date, date_to=period.end_date
     )
-    numbers = await lookup.resolve(session, "payment_entry", [r.payment_entry_id for r in rows])
-    project_names = await lookup.resolve(session, "project", [r.project_id for r in rows])
+    spent = await service.expenses_for_employee(
+        session, employee_id=employee_id, date_from=period.start_date, date_to=period.end_date
+    )
+    numbers = await lookup.resolve(
+        session, "payment_entry", [r.payment_entry_id for r in rows] + [x.payment_entry_id for x in spent]
+    )
+    project_names = await lookup.resolve(
+        session, "project", [r.project_id for r in rows] + [x.project_id for x in spent]
+    )
+    gross = sum((r.amount_base or Decimal(0) for r in rows), Decimal(0))
+    expenses_total = sum((x.amount for x in spent), Decimal(0))
     by_project: dict[uuid.UUID | None, ProjectRevenue] = {}
     for r in rows:
         pr = by_project.setdefault(
@@ -498,8 +526,20 @@ async def employee_revenue(
         employee_id=employee_id,
         employee_name=(await employees.names(session, [employee_id])).get(employee_id, "?"),
         period=_period_out(period, today),
-        total=sum((r.amount_base or Decimal(0) for r in rows), Decimal(0)),
+        total=gross,
+        expenses_total=expenses_total,
+        net=gross - expenses_total,
         by_project=sorted(by_project.values(), key=lambda x: -x.revenue),
+        expenses=[
+            EmployeeExpenseOut(
+                payment_entry_id=x.payment_entry_id,
+                payment_number=numbers.get(x.payment_entry_id),
+                date=x.expense_date,
+                project_name=project_names.get(x.project_id),
+                amount=x.amount,
+            )
+            for x in spent
+        ],
         allocations=[
             RevenueAllocationOut(
                 payment_entry_id=r.payment_entry_id,
@@ -601,29 +641,50 @@ async def revenue_report(
     await session.commit()
     visible = await _visible(session, user, "revenue.read")
     ids = list(visible) if visible is not None else None
-    matrix: dict[uuid.UUID, list[Decimal]] = {}
+    zeros = [Decimal(0)] * len(periods)
+    gross: dict[uuid.UUID, list[Decimal]] = {}
+    spent: dict[uuid.UUID, list[Decimal]] = {}
     for i, p in enumerate(periods):
-        totals = await attribution.employee_totals(
-            session, date_from=p.start_date, date_to=p.end_date, employee_ids=ids
+        for target, totals in (
+            (
+                gross,
+                await attribution.employee_totals(
+                    session, date_from=p.start_date, date_to=p.end_date, employee_ids=ids
+                ),
+            ),
+            (
+                spent,
+                await service.expense_totals(session, date_from=p.start_date, date_to=p.end_date, employee_ids=ids),
+            ),
+        ):
+            for emp, amount in totals.items():
+                target.setdefault(emp, list(zeros))[i] = amount
+    names = await employees.names(session, list(set(gross) | set(spent)))
+    rows = []
+    for e in set(gross) | set(spent):
+        g, x = gross.get(e, list(zeros)), spent.get(e, list(zeros))
+        net = [a - b for a, b in zip(g, x, strict=True)]
+        rows.append(
+            RevenueReportRow(
+                employee_id=e,
+                employee_name=names.get(e, "?"),
+                by_period=net,
+                gross_by_period=g,
+                expenses_by_period=x,
+                total=sum(net, Decimal(0)),
+            )
         )
-        for emp, amount in totals.items():
-            matrix.setdefault(emp, [Decimal(0)] * len(periods))[i] = amount
-    names = await employees.names(session, list(matrix))
-    rows = sorted(
-        (
-            RevenueReportRow(employee_id=e, employee_name=names.get(e, "?"), by_period=v, total=sum(v, Decimal(0)))
-            for e, v in matrix.items()
-        ),
-        key=lambda r: -r.total,
-    )
+    rows.sort(key=lambda r: -r.total)
     totals = [sum((r.by_period[i] for r in rows), Decimal(0)) for i in range(len(periods))]
     if format == "csv":
         return csv_response(
             "employee-revenue.csv",
-            ["employee", *(p.label for p in periods), "total"],
+            ["employee", "period", "start", "end", "revenue", "expenses", "net"],
             [
-                *([r.employee_name, *r.by_period, r.total] for r in rows),
-                ["Total", *totals, sum(totals, Decimal(0))],
+                (r.employee_name, p.label, p.start_date, p.end_date, g, x, n)
+                for r in rows
+                for p, g, x, n in zip(periods, r.gross_by_period, r.expenses_by_period, r.by_period, strict=True)
+                if g or x
             ],
         )
     return RevenueReportOut(
@@ -655,7 +716,12 @@ async def salary_report(
         for line in b.lines:
             if line.period.id in index:
                 cells[index[line.period.id]] = SalaryReportCell(
-                    revenue=line.revenue, calculated=line.calculated, paid=line.paid, status=line.status
+                    revenue=line.revenue,
+                    gross_revenue=line.gross_revenue,
+                    expenses=line.expenses,
+                    calculated=line.calculated,
+                    paid=line.paid,
+                    status=line.status,
                 )
         if not any(cells) and not b.balance:
             continue
@@ -673,9 +739,20 @@ async def salary_report(
     if format == "csv":
         return csv_response(
             "employee-salary.csv",
-            ["employee", "period", "start", "end", "revenue", "calculated", "paid", "status"],
+            ["employee", "period", "start", "end", "revenue", "expenses", "net", "calculated", "paid", "status"],
             [
-                (r.employee_name, p.label, p.start_date, p.end_date, c.revenue, c.calculated, c.paid, c.status)
+                (
+                    r.employee_name,
+                    p.label,
+                    p.start_date,
+                    p.end_date,
+                    c.gross_revenue,
+                    c.expenses,
+                    c.revenue,
+                    c.calculated,
+                    c.paid,
+                    c.status,
+                )
                 for r in rows
                 for p, c in zip(periods, r.by_period, strict=True)
                 if c

@@ -363,3 +363,63 @@ async def test_salary_cycle_change(admin, finance) -> None:  # type: ignore[no-u
     ]
     company = (await admin.get(f"{API}/settings/company")).json()
     assert company["salary_cycle_start_day"] == 1
+
+
+async def expense_body(employee_id: str, amount: str, on: str = "2026-11-12") -> dict:
+    return {
+        "posting_date": on,
+        "direction": "pay",
+        "amount": amount,
+        "method_category_id": await category_id("payment_method", "bank_transfer"),
+        "purpose_category_id": await category_id("payment_purpose", "operating_expense"),
+        "category_id": await category_id("expense_category", "software_subscriptions"),
+        "paid_from_payment_account_id": await payment_account_id("Company Checking"),
+        "employee_id": employee_id,
+    }
+
+
+async def test_employee_expenses_reduce_revenue_and_salary(admin, finance, scenario) -> None:  # type: ignore[no-untyped-def]
+    await create_and_submit(finance, await receipt_body(party_id=scenario["customer"], project_id=scenario["project"]))
+    nov = await period(finance, "Nov 2026")
+    # A's $6,000 less a $1,000 expense tagged to A: the formula runs on $5,000.
+    expense = await create_and_submit(finance, await expense_body(scenario["a"], "1000"))
+    rows = await board(finance, nov["id"])
+    a = rows["Employee A"]
+    assert (a["gross_revenue"], a["expenses"], a["revenue"], a["calculated"]) == (
+        "6000.00",
+        "1000.00",
+        "5000.00",
+        "481.48",
+    )
+    assert rows["Employee B"]["calculated"] == "352.59"  # untouched
+
+    # A salary payment is tagged to the employee too, but it is not an expense against their revenue.
+    await create_and_submit(finance, await salary_body(finance, scenario["b"], "100.00"))
+    assert (await board(finance, nov["id"]))["Employee B"]["expenses"] == "0.00"
+
+    # Expenses above revenue: negative net, no revenue share (never a negative salary).
+    await create_and_submit(finance, await expense_body(scenario["b"], "4500"))
+    b = (await board(finance, nov["id"]))["Employee B"]
+    assert (b["revenue"], b["calculated"]) == ("-500.00", "0.00")
+
+    detail = (await finance.get(f"{API}/employees/{scenario['a']}/revenue")).json()
+    assert (detail["total"], detail["expenses_total"], detail["net"]) == ("6000.0000", "1000.0000", "5000.0000")
+    assert detail["expenses"][0]["payment_number"] == expense["number"]
+    report = (await finance.get(f"{API}/reports/employee-revenue")).json()
+    row = next(r for r in report["rows"] if r["employee_name"] == "Employee A")
+    assert D(row["total"]) == 5000 and D(sum(D(x) for x in row["expenses_by_period"])) == 1000
+
+    # Cancelling the expense restores the revenue; in a closed period it is blocked like a receipt.
+    cancelled = await finance.post(f"{PE}/{expense['id']}/cancel", json={"reason": "wrong employee"}, headers=idem())
+    assert cancelled.status_code == 200
+    assert (await board(finance, nov["id"]))["Employee A"]["calculated"] == "626.67"
+    again = await create_and_submit(finance, await expense_body(scenario["a"], "1000"))
+    clock.freeze(date(2026, 11, 25))
+    assert (await finance.post(f"{API}/salary-periods/{nov['id']}/close")).status_code == 200
+    frozen = (await board(finance, nov["id"]))["Employee A"]
+    assert (frozen["gross_revenue"], frozen["expenses"], frozen["calculated"]) == ("6000.00", "1000.00", "481.48")
+    blocked = await finance.post(f"{PE}/{again['id']}/cancel", json={"reason": "x" * 5}, headers=idem())
+    assert blocked.status_code == 409
+    late = await finance.post(PE, json=await expense_body(scenario["a"], "50", on="2026-11-20"))
+    submit = await finance.post(f"{PE}/{late.json()['id']}/submit", headers=idem())
+    assert submit.status_code == 409  # dated in the closed period

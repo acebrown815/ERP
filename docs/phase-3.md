@@ -80,7 +80,13 @@ The dev database already has the cycle on the 25th, so the current period is Nov
 | Display | Lists show money with 2 decimals; detail pages keep full precision. Payment Entries opens on Submitted |
 | Data fix | The mistaken expense session (PE-2026-00013 to 00018) was removed from the dev database on request; a full copy was kept as `erp_backup_20261028` |
 
-**Open question:** whether expenses tagged to an employee should reduce their revenue (and salary), or only be shown next to it.
+### Follow-up (2026-10-28)
+
+| Change | What it does |
+|---|---|
+| Employee expenses reduce revenue | Expenses tagged to an employee are subtracted from the revenue credited to them in the same salary period; the formula runs on the net (a negative net pays no revenue share; fixed pay and adjustments still apply). Salary payments are not expenses here. Closed periods block submitting or cancelling such expenses. Existing tagged expenses were backfilled (migration 0005) |
+| Reports | Salary board, employee pages, My Salary, Revenue Contributions and the Employee Salary report show revenue, expenses and net; CSV exports too. Period headers show their date range |
+| "This month" = salary period | Dashboard income, expenses and net profit, the General Ledger default, and the "This month / Last month" shortcuts follow the salary cycle (e.g. Oct 25 – Nov 24). Accounting period closing stays on calendar months |
 
 ## Next: Phase 4 — Projects
 

@@ -5,7 +5,7 @@ import { ArrowRight, CheckCircle2, ChevronDown, ChevronRight, Circle, Plus } fro
 import Link from "next/link";
 import { Fragment, useState } from "react";
 
-import { monthRange } from "@/components/accounting/report-controls";
+import { rangeText, usePeriodRanges } from "@/components/accounting/report-controls";
 import { PageHeader } from "@/components/erp/page-header";
 import { StatusBadge } from "@/components/payments/entry-view";
 import { Button } from "@/components/ui/button";
@@ -48,8 +48,15 @@ function FinanceOverview() {
   const base = useCompany().data?.base_currency ?? "USD";
   const currencies = useCurrencies();
   const holdings = useQuery({ queryKey: ["holdings"], queryFn: () => api.get<Holdings>("/reports/holdings") });
-  const month = monthRange();
-  const pl = useQuery({ queryKey: ["pl", month, null], queryFn: () => api.get<ProfitLoss>("/reports/profit-and-loss", month) });
+  // "This month" follows the salary cycle (e.g. Oct 25 – Nov 24), not the calendar month.
+  const { current, loading } = usePeriodRanges();
+  const month = { from: current.from, to: current.to };
+  const pl = useQuery({
+    queryKey: ["pl", month, null],
+    queryFn: () => api.get<ProfitLoss>("/reports/profit-and-loss", month),
+    enabled: !loading,
+  });
+  const span = `${current.label} · ${rangeText(current)}`;
   const recent = useQuery({ queryKey: ["payment-entries", "recent"], queryFn: () => api.get<Page<PaymentEntry>>("/payment-entries", { page_size: 6 }) });
   const h = holdings.data;
   const fx = h ? subtract(h.market_total, h.book_total) : "0";
@@ -62,9 +69,9 @@ function FinanceOverview() {
           base={base}
           hint={h && sign(fx) ? `At today's rates · ${formatAmount(h.book_total)} as recorded` : "At today's rates"}
         />
-        <Kpi label="Income this month" value={pl.data?.total_income} base={base} />
-        <Kpi label="Expenses this month" value={pl.data?.total_expenses} base={base} />
-        <Kpi label="Net profit this month" value={pl.data?.net_profit} base={base} tone={pl.data && Number(pl.data.net_profit) < 0 ? "bad" : "good"} />
+        <Kpi label="Income this month" value={pl.data?.total_income} base={base} hint={span} />
+        <Kpi label="Expenses this month" value={pl.data?.total_expenses} base={base} hint={span} />
+        <Kpi label="Net profit this month" value={pl.data?.net_profit} base={base} tone={pl.data && sign(pl.data.net_profit) < 0 ? "bad" : "good"} hint={span} />
       </div>
       {h && <AssetsByCurrency holdings={h} />}
       <Card className="mb-6">

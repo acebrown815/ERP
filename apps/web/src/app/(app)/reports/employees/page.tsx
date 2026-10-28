@@ -39,7 +39,12 @@ export default function EmployeeSalaryReportPage() {
             <THead>
               <TR>
                 <TH>Employee</TH>
-                {r.periods.map((p) => <TH key={p.id} className="text-right" title={periodRange(p)}>{p.label}{p.status === "closed" ? " ✓" : ""}</TH>)}
+                {r.periods.map((p) => (
+                  <TH key={p.id} className="text-right">
+                    <span className="block">{p.label}{p.status === "closed" ? " ✓" : ""}</span>
+                    <span className="block text-[11px] font-normal normal-case tracking-normal">{periodRange(p)}</span>
+                  </TH>
+                ))}
                 <TH className="text-right">Calculated</TH>
                 <TH className="text-right">Paid</TH>
                 <TH className="text-right">Balance</TH>
@@ -54,7 +59,9 @@ export default function EmployeeSalaryReportPage() {
                       {c ? (
                         <div className="flex flex-col items-end gap-0.5">
                           <span className="tabular font-medium">{formatAmount(c.calculated)}</span>
-                          <span className="tabular text-xs text-muted-foreground">on {formatAmount(c.revenue)}</span>
+                          <span className="tabular text-xs text-muted-foreground">
+                            on {formatAmount(c.revenue)} net{sign(c.expenses) ? ` (${formatAmount(c.gross_revenue)} − ${formatAmount(c.expenses)})` : ""}
+                          </span>
                           <SalaryStatus status={c.status} />
                         </div>
                       ) : <span className="text-muted-foreground">—</span>}

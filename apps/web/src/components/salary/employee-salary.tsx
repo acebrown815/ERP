@@ -43,19 +43,21 @@ function Revenue({ employeeId }: { employeeId: string }) {
     <Card>
       <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
         <div>
-          <CardTitle>Revenue credited</CardTitle>
-          <CardDescription>Customer payments split to this employee. This is what the salary formula is applied to.</CardDescription>
+          <CardTitle>Revenue and expenses</CardTitle>
+          <CardDescription>Customer payments split to this employee, minus expenses tagged to them. The net is what the salary formula is applied to.</CardDescription>
         </div>
         {periods.data && <PeriodSelect id="rev_period" periods={periods.data} value={selected} onChange={setPeriodId} />}
       </CardHeader>
       <CardContent>
-        {q.isError ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : !r ? <TableSkeleton rows={3} /> : r.allocations.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No revenue credited in {r.period.label} ({periodRange(r.period)}).</p>
+        {q.isError ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : !r ? <TableSkeleton rows={3} /> : r.allocations.length === 0 && r.expenses.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No revenue or expenses in {r.period.label} ({periodRange(r.period)}).</p>
         ) : (
+          <>
           <div className="grid gap-6 lg:grid-cols-[18rem_1fr]">
             <div>
-              <p className="tabular text-2xl font-semibold">{formatAmount(r.total)}</p>
-              <p className="mb-3 text-xs text-muted-foreground">{r.period.label} · {periodRange(r.period)}</p>
+              <p className={`tabular text-2xl font-semibold ${sign(r.net) < 0 ? "text-destructive" : ""}`}>{formatAmount(r.net)}</p>
+              <p className="text-xs text-muted-foreground">net · {r.period.label} · {periodRange(r.period)}</p>
+              <p className="mb-3 text-xs text-muted-foreground">{formatAmount(r.total)} revenue − {formatAmount(r.expenses_total)} expenses</p>
               <ul className="flex flex-col gap-1 text-sm">
                 {r.by_project.map((p) => (
                   <li key={p.project_id ?? "none"} className="flex justify-between gap-2">
@@ -80,6 +82,25 @@ function Revenue({ employeeId }: { employeeId: string }) {
               </TBody>
             </Table>
           </div>
+          {r.expenses.length > 0 && (
+            <div className="mt-6">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Expenses tagged to this employee</p>
+              <Table>
+                <THead><TR><TH>Date</TH><TH>Payment</TH><TH>Project</TH><TH className="text-right">Amount</TH></TR></THead>
+                <TBody>
+                  {r.expenses.map((x) => (
+                    <TR key={x.payment_entry_id}>
+                      <TD>{formatDate(x.date)}</TD>
+                      <TD className="font-mono text-xs">{x.payment_number}</TD>
+                      <TD>{x.project_name ?? "—"}</TD>
+                      <TD className="tabular text-right">−{formatAmount(x.amount)}</TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            </div>
+          )}
+          </>
         )}
       </CardContent>
     </Card>
@@ -112,7 +133,7 @@ function FormulaCard({ salary }: { salary: EmployeeSalary }) {
         {chart.data && <RateChart points={chart.data.chart} />}
         {current && (
           <p className="mt-3 text-sm">
-            This period so far: revenue <strong className="tabular">{formatAmount(current.revenue)}</strong> → rate{" "}
+            This period so far: net revenue <strong className="tabular">{formatAmount(current.revenue)}</strong> → rate{" "}
             <strong className="tabular">{formatRate(current.rate)}</strong> → salary <strong className="tabular">{formatAmount(current.calculated)}</strong>
           </p>
         )}
@@ -133,7 +154,11 @@ export function EmployeeSalaryView({ employeeId, path, showRevenue = true }: { e
   return (
     <div className="flex flex-col gap-6">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label={`Revenue this period${cur ? ` (${cur.period_label})` : ""}`} value={`${formatAmount(cur?.revenue ?? "0")} ${base}`} hint={cur ? periodRange({ start_date: cur.period_start, end_date: cur.period_end }) : undefined} />
+        <Stat
+          label={`Net revenue this period${cur ? ` (${cur.period_label})` : ""}`}
+          value={`${formatAmount(cur?.revenue ?? "0")} ${base}`}
+          hint={cur ? `${formatAmount(cur.gross_revenue)} revenue − ${formatAmount(cur.expenses)} expenses · ${periodRange({ start_date: cur.period_start, end_date: cur.period_end })}` : undefined}
+        />
         <Stat label="Projected salary this period" value={`${formatAmount(cur?.calculated ?? "0")} ${base}`} hint={cur?.formula_name ? `at ${formatRate(cur.rate)}` : "No formula"} />
         <Stat label="Salary balance" value={`${formatAmount(s.balance)} ${base}`} hint={bal > 0 ? "Owed, not yet paid" : bal < 0 ? "Paid ahead" : "All settled"} />
         <Stat label="Paid to date" value={`${formatAmount(s.paid_total)} ${base}`} hint={`of ${formatAmount(s.calculated_total)} calculated`} />
@@ -158,7 +183,7 @@ export function EmployeeSalaryView({ employeeId, path, showRevenue = true }: { e
           {s.statements.length === 0 ? <p className="text-sm text-muted-foreground">No salary yet.</p> : (
             <Table>
               <THead>
-                <TR><TH>Period</TH><TH className="text-right">Revenue</TH><TH className="text-right">Rate</TH><TH className="text-right">Calculated</TH><TH className="text-right">Paid</TH><TH>Status</TH></TR>
+                <TR><TH>Period</TH><TH className="text-right">Revenue</TH><TH className="text-right">Expenses</TH><TH className="text-right">Net</TH><TH className="text-right">Rate</TH><TH className="text-right">Calculated</TH><TH className="text-right">Paid</TH><TH>Status</TH></TR>
               </THead>
               <TBody>
                 {s.statements.map((x) => (
@@ -167,7 +192,9 @@ export function EmployeeSalaryView({ employeeId, path, showRevenue = true }: { e
                       <span className="font-medium">{x.period_label}</span>{" "}
                       <span className="text-xs text-muted-foreground">{periodRange({ start_date: x.period_start, end_date: x.period_end })}{x.period_status === "closed" ? " · closed" : ""}</span>
                     </TD>
-                    <TD className="tabular text-right">{formatAmount(x.revenue)}</TD>
+                    <TD className="tabular text-right">{formatAmount(x.gross_revenue)}</TD>
+                    <TD className="tabular text-right text-muted-foreground">{sign(x.expenses) ? `−${formatAmount(x.expenses)}` : "—"}</TD>
+                    <TD className={`tabular text-right ${sign(x.revenue) < 0 ? "text-destructive" : ""}`}>{formatAmount(x.revenue)}</TD>
                     <TD className="tabular text-right">{x.formula_name ? formatRate(x.rate) : "—"}</TD>
                     <TD className="tabular text-right">{formatAmount(x.calculated)}</TD>
                     <TD className="tabular text-right">{formatAmount(x.paid)}</TD>

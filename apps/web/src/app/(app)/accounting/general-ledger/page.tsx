@@ -4,7 +4,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
 
-import { CsvButton, DateRange, monthRange } from "@/components/accounting/report-controls";
+import { CsvButton, DateRange, usePeriodRanges, type Range } from "@/components/accounting/report-controls";
 import { FormField } from "@/components/erp/form-field";
 import { PageHeader } from "@/components/erp/page-header";
 import { AccountPicker, PartyPicker, ProjectPicker } from "@/components/erp/pickers";
@@ -19,7 +19,10 @@ import { formatDate } from "@/lib/utils";
 
 export default function GeneralLedgerPage() {
   const base = useCompany().data?.base_currency ?? "USD";
-  const [range, setRange] = useState(monthRange());
+  // Defaults to the current salary period (the company's "month").
+  const periods = usePeriodRanges();
+  const [chosen, setRange] = useState<Range | null>(null);
+  const range = chosen ?? { from: periods.current.from, to: periods.current.to };
   const [accountId, setAccountId] = useState<string | null>(null);
   const [partyId, setPartyId] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -30,7 +33,7 @@ export default function GeneralLedgerPage() {
     queryKey: ["general-ledger", params],
     queryFn: () => api.get<Ledger>("/reports/general-ledger", params),
     placeholderData: keepPreviousData,
-    enabled: !!range.from && !!range.to,
+    enabled: !!range.from && !!range.to && (!!chosen || !periods.loading),
   });
   const l = ledger.data;
 

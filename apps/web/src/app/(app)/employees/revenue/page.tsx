@@ -28,7 +28,7 @@ export default function RevenueContributionsPage() {
     <>
       <PageHeader
         title="Revenue contributions"
-        description={`Customer payments credited to each employee per salary period (${base}). Each payment is split once, so the total equals revenue received, never double-counted.`}
+        description={`Net revenue per employee per salary period (${base}): customer payments split to them, minus expenses tagged to them. Periods follow the salary cycle (Settings → Salary Cycle), not calendar months.`}
         actions={periods.data && <PeriodRange periods={periods.data} value={range} onChange={setRange} csvPath="/reports/employee-revenue" />}
       />
       <Card className="overflow-x-auto">
@@ -39,7 +39,12 @@ export default function RevenueContributionsPage() {
             <THead>
               <TR>
                 <TH>Employee</TH>
-                {r.periods.map((p) => <TH key={p.id} className="text-right" title={periodRange(p)}>{p.label}</TH>)}
+                {r.periods.map((p) => (
+                  <TH key={p.id} className="text-right">
+                    <span className="block">{p.label}</span>
+                    <span className="block text-[11px] font-normal normal-case tracking-normal">{periodRange(p)}</span>
+                  </TH>
+                ))}
                 <TH className="text-right">Total</TH>
               </TR>
             </THead>
@@ -48,9 +53,16 @@ export default function RevenueContributionsPage() {
                 <TR key={row.employee_id}>
                   <TD><Link href={`/employees/${row.employee_id}`} className="font-medium hover:underline">{row.employee_name}</Link></TD>
                   {row.by_period.map((v, i) => (
-                    <TD key={i} className={`tabular text-right ${sign(v) ? "" : "text-muted-foreground"}`}>{formatAmount(v)}</TD>
+                    <TD key={i} className="text-right align-top">
+                      <span className={`tabular block ${sign(v) < 0 ? "text-destructive" : sign(v) ? "" : "text-muted-foreground"}`}>{formatAmount(v)}</span>
+                      {sign(row.expenses_by_period[i]) !== 0 && (
+                        <span className="tabular block text-xs text-muted-foreground">
+                          {formatAmount(row.gross_by_period[i])} − {formatAmount(row.expenses_by_period[i])}
+                        </span>
+                      )}
+                    </TD>
                   ))}
-                  <TD className="tabular text-right font-medium">{formatAmount(row.total)}</TD>
+                  <TD className={`tabular text-right font-medium ${sign(row.total) < 0 ? "text-destructive" : ""}`}>{formatAmount(row.total)}</TD>
                 </TR>
               ))}
               <TR className="font-medium">

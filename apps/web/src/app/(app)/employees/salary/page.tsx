@@ -21,7 +21,7 @@ import { formatAmount, sign, subtract, sum } from "@/lib/money";
 import { useCompany, useSalaryPeriods } from "@/lib/queries";
 import { useCan } from "@/lib/session";
 import type { SalaryAdjustment, SalaryBoard, SalaryBoardRow } from "@/lib/types";
-import { formatDateTime } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
 
 // A file download from the API, not a page: a plain link on purpose.
 const SALARY_CSV = `${"/api/v1"}/reports/employee-salary?format=csv`;
@@ -214,7 +214,7 @@ export default function SalaryBoardPage() {
       )}
       {b && (
         <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Kpi label="Revenue credited" value={`${formatAmount(b.total_revenue)} ${base}`} />
+          <Kpi label="Net revenue" value={`${formatAmount(b.total_revenue)} ${base}`} hint="Revenue credited minus expenses tagged to employees" />
           <Kpi label="Salary calculated" value={`${formatAmount(b.total_calculated)} ${base}`} hint={p?.status === "open" ? "Projected while the period is open" : "Frozen"} />
           <Kpi label="Paid toward this period" value={`${formatAmount(b.total_paid)} ${base}`} />
           <Kpi label="Still owed for this period" value={`${formatAmount(owed)} ${base}`} />
@@ -234,6 +234,8 @@ export default function SalaryBoardPage() {
                 <TH className="w-8" />
                 <TH>Employee</TH>
                 <TH className="text-right">Revenue</TH>
+                <TH className="text-right" title="Expenses tagged to the employee">Expenses</TH>
+                <TH className="text-right" title="Revenue minus expenses: what the formula is applied to">Net</TH>
                 <TH className="text-right">Rate</TH>
                 <TH className="text-right">Formula</TH>
                 <TH className="text-right">Adjustments</TH>
@@ -262,7 +264,9 @@ export default function SalaryBoardPage() {
                         <Link href={`/employees/${r.employee_id}`} className="font-medium hover:underline">{r.employee_name}</Link>
                         <p className="text-xs text-muted-foreground">{r.formula_name ?? <span className="text-warning">No formula</span>}</p>
                       </TD>
-                      <TD className="tabular text-right">{formatAmount(r.revenue)}</TD>
+                      <TD className="tabular text-right">{formatAmount(r.gross_revenue)}</TD>
+                      <TD className="tabular text-right text-muted-foreground">{sign(r.expenses) ? `−${formatAmount(r.expenses)}` : "—"}</TD>
+                      <TD className={cn("tabular text-right font-medium", sign(r.revenue) < 0 && "text-destructive")}>{formatAmount(r.revenue)}</TD>
                       <TD className="tabular text-right">{r.formula_name ? formatRate(r.rate) : "—"}</TD>
                       <TD className="tabular text-right">{formatAmount(r.formula_amount)}</TD>
                       <TD className="tabular text-right">{sign(r.adjustments_total) ? formatAmount(r.adjustments_total) : "—"}</TD>
@@ -283,7 +287,7 @@ export default function SalaryBoardPage() {
                     </TR>
                     {expanded && (
                       <tr className="border-b">
-                        <td colSpan={11} className="p-0"><Detail row={r} periodId={b.period.id} editable={!!editable} /></td>
+                        <td colSpan={13} className="p-0"><Detail row={r} periodId={b.period.id} editable={!!editable} /></td>
                       </tr>
                     )}
                   </Fragment>

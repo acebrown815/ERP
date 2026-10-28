@@ -53,7 +53,9 @@ class SalaryStatement(UUIDPk, Base):
     )
     formula_name: Mapped[str | None] = mapped_column(String(120))
     formula_version_no: Mapped[int | None]
-    attributed_revenue: Mapped[Decimal]
+    gross_revenue: Mapped[Decimal] = mapped_column(default=Decimal(0))  # credited from customer payments
+    expenses_total: Mapped[Decimal] = mapped_column(default=Decimal(0))  # expenses tagged to the employee
+    attributed_revenue: Mapped[Decimal]  # net: gross - expenses; what the formula was applied to
     rate_applied: Mapped[Decimal] = mapped_column(RATE)
     formula_amount: Mapped[Decimal]
     adjustments_total: Mapped[Decimal]
@@ -103,4 +105,25 @@ class SalaryPayment(UUIDPk, Base):
     amount: Mapped[Decimal]  # base currency
     paid_on: Mapped[date]
     salary_period_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("salary_periods.id", ondelete="RESTRICT"))
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class EmployeeExpense(UUIDPk, Base):
+    """A submitted expense payment tagged to an employee. It reduces that employee's revenue (and so their
+    salary) in the period of its date. Salary payments are not expenses here. Recorded on submit, removed
+    on cancel."""
+
+    __tablename__ = "employee_expenses"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="amount_positive"),
+        Index("ix_employee_expenses_employee_date", "employee_id", "expense_date"),
+    )
+
+    payment_entry_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("payment_entries.id", ondelete="RESTRICT"), unique=True
+    )
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("employees.id", ondelete="RESTRICT"))
+    project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id", ondelete="RESTRICT"))
+    amount: Mapped[Decimal]  # base currency
+    expense_date: Mapped[date]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

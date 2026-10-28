@@ -22,7 +22,13 @@ from app.modules.audit import api as audit
 from app.modules.compensation import api as compensation
 from app.modules.employees import api as employees
 from app.modules.salary import cycle
-from app.modules.salary.models import SalaryAdjustment, SalaryPayment, SalaryPeriod, SalaryStatement
+from app.modules.salary.models import (
+    EmployeeExpense,
+    SalaryAdjustment,
+    SalaryPayment,
+    SalaryPeriod,
+    SalaryStatement,
+)
 from app.modules.settings import api as settings
 
 ZERO = Decimal(0)
@@ -124,7 +130,7 @@ class Line:
 
     period: SalaryPeriod
     employee_id: uuid.UUID
-    revenue: Decimal
+    revenue: Decimal  # net = gross_revenue - expenses; the formula is applied to this (never below zero)
     formula_id: uuid.UUID | None
     formula_name: str | None
     formula_version_id: uuid.UUID | None
@@ -135,6 +141,8 @@ class Line:
     calculated: Decimal
     components: list[dict[str, Any]]
     frozen: bool
+    gross_revenue: Decimal = ZERO
+    expenses: Decimal = ZERO
     paid: Decimal = ZERO
 
     @property
@@ -181,23 +189,30 @@ async def _live(
 ) -> dict[uuid.UUID, Line]:
     start, end = period.start_date, period.end_date
     revenue = await attribution.employee_totals(session, date_from=start, date_to=end, employee_ids=employee_ids)
+    expenses = await expense_totals(session, date_from=start, date_to=end, employee_ids=employee_ids)
     formulas = await compensation.resolve(session, start=start, end=end, employee_ids=employee_ids)
     adjustments = await _adjustments(session, period.id, employee_ids)
     precision = (await settings.base_currency(session)).precision
     out = {}
-    for emp in set(revenue) | set(formulas) | set(adjustments):
-        rev = quantize(revenue.get(emp) or ZERO, precision)
+    for emp in set(revenue) | set(expenses) | set(formulas) | set(adjustments):
+        gross = quantize(revenue.get(emp) or ZERO, precision)
+        spent = quantize(expenses.get(emp) or ZERO, precision)
+        net = gross - spent
         adj = [(f"{ADJUSTMENT_LABELS[a.kind]}: {a.reason}", a.amount) for a in adjustments.get(emp, [])]
         f = formulas.get(emp)
+        # Expenses above revenue mean no revenue share for the period (never a negative share).
+        basis = max(net, ZERO)
         if f is not None:
-            result = compensation.calculate(f.definition, rev, adj)
+            result = compensation.calculate(f.definition, basis, adj)
         else:
             # No formula: revenue still shows (so a missing assignment is visible); only adjustments count.
-            result = compensation.calculate(compensation.FormulaDefinition(rate_schedule={"mode": "none"}), rev, adj)
+            result = compensation.calculate(compensation.FormulaDefinition(rate_schedule={"mode": "none"}), basis, adj)
         out[emp] = Line(
             period=period,
             employee_id=emp,
-            revenue=rev,
+            revenue=net,
+            gross_revenue=gross,
+            expenses=spent,
             formula_id=f.formula_id if f else None,
             formula_name=f.formula_name if f else None,
             formula_version_id=f.version_id if f else None,
@@ -228,6 +243,8 @@ async def _frozen(
             period=period,
             employee_id=s.employee_id,
             revenue=q(s.attributed_revenue),
+            gross_revenue=q(s.gross_revenue),
+            expenses=q(s.expenses_total),
             formula_id=s.formula_id,
             formula_name=s.formula_name,
             formula_version_id=s.formula_version_id,
@@ -368,6 +385,73 @@ async def payments_for(session: AsyncSession, employee_id: uuid.UUID) -> list[Sa
     )
 
 
+# ---- employee expenses -----------------------------------------------------------------------------
+
+
+async def record_expense(
+    session: AsyncSession,
+    *,
+    payment_entry_id: uuid.UUID,
+    employee_id: uuid.UUID,
+    project_id: uuid.UUID | None,
+    amount: Decimal,
+    on: date,
+) -> None:
+    """Called by payments when an expense tagged to an employee is submitted."""
+    await assert_open(session, on, "an expense tagged to an employee and dated in it can be submitted")
+    session.add(
+        EmployeeExpense(
+            payment_entry_id=payment_entry_id,
+            employee_id=employee_id,
+            project_id=project_id,
+            amount=amount,
+            expense_date=on,
+        )
+    )
+    await session.flush()
+
+
+async def remove_expense(session: AsyncSession, *, payment_entry_id: uuid.UUID) -> None:
+    """Called by payments when a payment is cancelled; no-op unless it was an employee expense."""
+    row = (
+        await session.execute(select(EmployeeExpense).where(EmployeeExpense.payment_entry_id == payment_entry_id))
+    ).scalar_one_or_none()
+    if row is None:
+        return
+    await assert_open(session, row.expense_date, "an expense tagged to an employee and dated in it can be cancelled")
+    await session.delete(row)
+    await session.flush()
+
+
+async def expense_totals(
+    session: AsyncSession, *, date_from: date, date_to: date, employee_ids: list[uuid.UUID] | None = None
+) -> dict[uuid.UUID, Decimal]:
+    stmt = (
+        select(EmployeeExpense.employee_id, func.sum(EmployeeExpense.amount))
+        .where(EmployeeExpense.expense_date.between(date_from, date_to))
+        .group_by(EmployeeExpense.employee_id)
+    )
+    if employee_ids is not None:
+        stmt = stmt.where(EmployeeExpense.employee_id.in_(employee_ids))
+    return dict((await session.execute(stmt)).all())  # type: ignore[arg-type]
+
+
+async def expenses_for_employee(
+    session: AsyncSession, *, employee_id: uuid.UUID, date_from: date, date_to: date
+) -> list[EmployeeExpense]:
+    return list(
+        (
+            await session.execute(
+                select(EmployeeExpense)
+                .where(
+                    EmployeeExpense.employee_id == employee_id, EmployeeExpense.expense_date.between(date_from, date_to)
+                )
+                .order_by(EmployeeExpense.expense_date, EmployeeExpense.created_at)
+            )
+        ).scalars()
+    )
+
+
 # ---- adjustments -----------------------------------------------------------------------------------
 
 
@@ -484,6 +568,8 @@ async def close_period(session: AsyncSession, *, actor_id: uuid.UUID, period_id:
             formula_name=x.formula_name,
             formula_version_no=x.formula_version_no,
             attributed_revenue=x.revenue,
+            gross_revenue=x.gross_revenue,
+            expenses_total=x.expenses,
             rate_applied=x.rate,
             formula_amount=x.formula_amount,
             adjustments_total=x.adjustments_total,

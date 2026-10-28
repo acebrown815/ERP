@@ -426,6 +426,16 @@ async def submit(session: AsyncSession, *, actor_id: uuid.UUID, pe_id: uuid.UUID
         )
     else:
         pe.salary_period_id = None
+        if pe.direction == "pay" and pe.employee_id:
+            # An expense tagged to an employee reduces their revenue and salary.
+            await salary.record_expense(
+                session,
+                payment_entry_id=pe.id,
+                employee_id=pe.employee_id,
+                project_id=pe.project_id,
+                amount=result.base_amount,
+                on=pe.posting_date,
+            )
     pe.status = "submitted"
     pe.journal_entry_id = entry.id
     pe.submitted_at = datetime.now(UTC)
@@ -457,6 +467,7 @@ async def cancel(session: AsyncSession, *, actor_id: uuid.UUID, pe_id: uuid.UUID
     )
     await attribution.cancel(session, payment_id=pe.id)
     await salary.remove_payment(session, payment_entry_id=pe.id)
+    await salary.remove_expense(session, payment_entry_id=pe.id)
     pe.status = "cancelled"
     pe.reversal_journal_entry_id = reversal.id
     pe.cancelled_at = datetime.now(UTC)

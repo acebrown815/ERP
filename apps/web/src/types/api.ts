@@ -1984,6 +1984,10 @@ export interface components {
             employee_id: string;
             /** Employee Name */
             employee_name: string;
+            /** Gross Revenue */
+            gross_revenue: string;
+            /** Expenses */
+            expenses: string;
             /** Revenue */
             revenue: string;
             /** Formula Id */
@@ -2340,6 +2344,25 @@ export interface components {
             /** User Id */
             user_id?: string | null;
         };
+        /** EmployeeExpenseOut */
+        EmployeeExpenseOut: {
+            /**
+             * Payment Entry Id
+             * Format: uuid
+             */
+            payment_entry_id: string;
+            /** Payment Number */
+            payment_number: string | null;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Project Name */
+            project_name: string | null;
+            /** Amount */
+            amount: string;
+        };
         /** EmployeeOut */
         EmployeeOut: {
             /**
@@ -2406,10 +2429,16 @@ export interface components {
             period: components["schemas"]["SalaryPeriodOut"];
             /** Total */
             total: string;
+            /** Expenses Total */
+            expenses_total: string;
+            /** Net */
+            net: string;
             /** By Project */
             by_project: components["schemas"]["ProjectRevenue"][];
             /** Allocations */
             allocations: components["schemas"]["RevenueAllocationOut"][];
+            /** Expenses */
+            expenses: components["schemas"]["EmployeeExpenseOut"][];
         };
         /** EmployeeSalaryOut */
         EmployeeSalaryOut: {
@@ -3960,6 +3989,10 @@ export interface components {
             employee_name: string;
             /** By Period */
             by_period: string[];
+            /** Gross By Period */
+            gross_by_period: string[];
+            /** Expenses By Period */
+            expenses_by_period: string[];
             /** Total */
             total: string;
         };
@@ -4130,6 +4163,10 @@ export interface components {
         SalaryReportCell: {
             /** Revenue */
             revenue: string;
+            /** Gross Revenue */
+            gross_revenue: string;
+            /** Expenses */
+            expenses: string;
             /** Calculated */
             calculated: string;
             /** Paid */
@@ -4240,6 +4277,10 @@ export interface components {
             employee_id: string;
             /** Employee Name */
             employee_name: string;
+            /** Gross Revenue */
+            gross_revenue: string;
+            /** Expenses */
+            expenses: string;
             /** Revenue */
             revenue: string;
             /** Formula Id */
