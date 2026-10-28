@@ -316,3 +316,24 @@ async def seed(session: AsyncSession, *, company_name: str = "My Company", base_
             )
         )
         await session.flush()
+
+
+# ---- helpers for other modules ---------------------------------------------------------------------
+
+
+async def base_currency(session: AsyncSession) -> Currency:
+    company = await get_company(session)
+    return await get_currency(session, company.base_currency)
+
+
+async def lock_base_currency(session: AsyncSession) -> None:
+    """Called when the first journal entry is posted; the base currency is frozen afterwards."""
+    company = await get_company(session)
+    if not company.base_currency_locked:
+        company.base_currency_locked = True
+        await session.flush()
+
+
+async def policy(session: AsyncSession, key: str) -> Any:
+    company = await get_company(session)
+    return company.policies.get(key, DEFAULT_POLICIES.get(key))

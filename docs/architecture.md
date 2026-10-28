@@ -1,4 +1,4 @@
-# ERP for a Software Services Company — Architecture & Design (v0.4)
+# ERP for a Software Services Company — Architecture & Design (v0.5)
 
 Status: **Business rules agreed (see Section 2). Four small follow-ups are open (Section 2.3). Ready to start Phase 1.**
 Date: 2026-10-27
@@ -129,7 +129,7 @@ The bridges between the two are explicit:
 |---|---|---|
 | Frontend | Next.js 15 (App Router), React, TypeScript, Tailwind, shadcn/ui, TanStack Table, React Hook Form, Zod | TanStack Query (server state), `openapi-typescript` (types generated from FastAPI), `decimal.js`, FullCalendar (MIT core), `frappe-gantt` (MIT) or custom SVG Gantt, `dnd-kit` (Kanban), Recharts |
 | Backend | Python 3.12+, FastAPI, SQLAlchemy 2.x (async, asyncpg), Alembic, Pydantic v2 | Outbox worker (`python -m app.worker`, Postgres-only), `python-dateutil` (recurrence), `openpyxl` / `WeasyPrint` (exports), `structlog`, an AST test that enforces module boundaries. Redis is added only when a feature needs it (e.g. scheduled reminders) |
-| Database | PostgreSQL 16 | `ltree` (account tree), `btree_gist` (no-overlap date ranges) |
+| Database | PostgreSQL 16 | Materialized id paths for the account tree (`path LIKE prefix%`), `btree_gist` (no-overlap date ranges) |
 | Infra | Docker Compose: `postgres`, `migrate`, `api`, `worker`, `web`, `caddy` | Attachments on a local volume in Phase 1; an S3-compatible backend (S3, R2, MinIO) plugs in behind the same storage interface |
 
 ### 3.2 Deployment view
@@ -393,7 +393,7 @@ erDiagram
         string code UK
         string name
         uuid parent_id FK
-        ltree path
+        string path "/id/id/ materialized path"
         string root_type "asset|liability|equity|income|expense"
         string account_type "bank, cash, crypto, credit_card, income, expense, ..."
         bool is_group
@@ -763,7 +763,7 @@ There are no receivable or payable accounts, because there is no invoicing (Q1).
 
 - Only **leaf** accounts receive postings. An account's `root_type` always matches its parent's.
 - Accounts with postings can be deactivated but not deleted. Inactive accounts reject new postings and still appear in reports.
-- **Balances are never stored.** Balance = `SUM(debit_base − credit_base)` over posted lines for the account and its children (`path <@ account.path`). Closed periods can be cached for speed, but the cache is always rebuilt from the GL.
+- **Balances are never stored.** Balance = `SUM(debit_base − credit_base)` over posted lines for the account and its children (`path LIKE account.path || '%'`). Closed periods can be cached for speed, but the cache is always rebuilt from the GL.
 
 ### 6.3 Journal invariants (enforced by the database, not only by code)
 
@@ -797,7 +797,8 @@ Accounting periods are monthly and **open** by default. An Admin can **close** a
 - Base currency: **USD**, fixed after the first posting.
 - Each line stores its currency, signed amount in that currency, rate, and the USD debit/credit.
 - Crypto is just a currency with `is_crypto = true` and up to 18 decimals. A BTC wallet balance is a BTC quantity. Its USD value in reports is the historical USD amount at transaction time.
-- Transfers or conversions between currencies post the USD difference to **4950 Realized FX / Crypto Gain-Loss**. There is no month-end revaluation in v1.
+- Money **leaving** a foreign-currency or crypto account is valued at its **carrying cost** (average cost: the account's USD value ÷ units held), not today's rate. The gap between that cost and the USD value received or spent posts to **4950 Realized FX / Crypto Gain-Loss**. This way an account's USD value reaches zero when its units do. Example: 1,000 USDT received at 0.999 ($999) and converted to $998.50 posts a $0.50 realized loss.
+- There is no month-end revaluation in v1.
 
 ### 6.7 Reports from the GL
 
@@ -1375,7 +1376,7 @@ Change from v0.1: basic employees and minimal projects move into Phase 2, becaus
 | R4 | The salary formula will change (Q4 is provisional) | Versioned formulas with effective dates. Closed months keep their version. Admin UI with a preview, no code changes |
 | R5 | Salary data leakage | Scope filters, field stripping, 404 on out-of-scope rows, per-endpoint permission tests, audited exports |
 | R6 | Multi-currency and crypto edge cases | Per-line currency/rate/USD amount, realized gain/loss only, high-precision crypto columns |
-| R7 | Report speed as the GL grows | Indexes on account/date, project and party. `ltree` subtree queries. Cached closed periods rebuilt from the GL |
+| R7 | Report speed as the GL grows | Indexes on account/date, project and party. Prefix-indexed subtree paths. Cached closed periods rebuilt from the GL |
 | R8 | Calendar time-zone and recurrence bugs | UTC + IANA zone, expand in the original zone, DST tests, all-day as dates |
 | R9 | Gantt library licensing | Use `frappe-gantt` (MIT) or a custom SVG behind a `TimelineView` component, so it can be swapped |
 | R10 | Scope creep (invoicing, approvals, accruals coming back) | Each is a clean add-on: invoices add AR rules, accruals add a payable account. Neither requires migrating history |

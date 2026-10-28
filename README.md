@@ -3,7 +3,7 @@
 Web-based ERP for a software services company: double-entry accounting, payments, employee revenue attribution, salary, projects and calendars.
 
 - Design: [docs/architecture.md](docs/architecture.md)
-- Progress: [docs/phase-1.md](docs/phase-1.md)
+- Progress: [docs/phase-1.md](docs/phase-1.md), [docs/phase-2.md](docs/phase-2.md)
 
 ```
 apps/api     FastAPI modular monolith (Python, SQLAlchemy, Alembic, PostgreSQL)
@@ -32,7 +32,7 @@ pip install -e ".[dev]"
 python -m app.cli migrate
 python -m app.cli seed --company "Your Company"
 ERP_ADMIN_PASSWORD='choose-a-strong-one' python -m app.cli create-admin --email you@example.com --name "Your Name"
-python -m app.cli demo                           # optional demo users, password Demo-Pass-2026
+python -m app.cli demo                           # optional demo users (password Demo-Pass-2026) + sample data
 uvicorn app.main:app --reload --port 8000
 python -m app.worker                             # background worker (separate terminal)
 ```

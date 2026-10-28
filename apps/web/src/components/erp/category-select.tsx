@@ -39,6 +39,8 @@ export function CategorySelect({
   label,
   error,
   required,
+  filter,
+  id: givenId,
 }: {
   group: string;
   value: CategoryValue;
@@ -46,8 +48,12 @@ export function CategorySelect({
   label: string;
   error?: string;
   required?: boolean;
+  /** Hide top-level values that don't apply here (e.g. purposes for another direction). */
+  filter?: (category: Category) => boolean;
+  id?: string;
 }) {
-  const id = useId();
+  const autoId = useId();
+  const id = givenId ?? autoId;
   const qc = useQueryClient();
   const { data: categories = [], isLoading } = useCategories(group);
   const { data: groups = [] } = useCategoryGroups();
@@ -59,7 +65,9 @@ export function CategorySelect({
     () => (other ? categories.filter((c) => c.parent_id === other.id) : []),
     [categories, other],
   );
-  const mainOptions = categories.filter((c) => !other || c.parent_id !== other.id);
+  const mainOptions = categories.filter(
+    (c) => (!other || c.parent_id !== other.id) && (!filter || c.is_other || c.id === value.category_id || filter(c)),
+  );
 
   const selected = categories.find((c) => c.id === value.category_id);
   const underOther = !!selected && !!other && (selected.id === other.id || selected.parent_id === other.id);

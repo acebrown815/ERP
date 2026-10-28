@@ -441,3 +441,30 @@ async def seed(session: AsyncSession) -> int:
             created += 1
     await session.flush()
     return created
+
+
+async def set_config_default(session: AsyncSession, group_key: str, system_key: str, key: str, value: Any) -> None:
+    """Seed helper: set a config key on a system category unless an admin already set it."""
+    category = await by_system_key(session, group_key, system_key)
+    if key not in category.config:
+        category.config = {**category.config, key: value}
+        await session.flush()
+
+
+async def find(session: AsyncSession, group_key: str, value: str) -> Category | None:
+    """Match an active category by system key or (case-insensitive) name, e.g. for CSV imports."""
+    value = value.strip()
+    if not value:
+        return None
+    return (
+        await session.execute(
+            select(Category)
+            .where(
+                Category.group_key == group_key,
+                Category.is_active.is_(True),
+                (Category.system_key == value.lower().replace(" ", "_")) | (func.lower(Category.name) == value.lower()),
+            )
+            .order_by(Category.is_system.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()

@@ -1,0 +1,601 @@
+import uuid
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Annotated, Any, Literal
+
+from fastapi import APIRouter, Depends, Query, Request, Response
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core import lookup
+from app.core.csv_export import csv_response
+from app.core.db import get_session
+from app.core.errors import ValidationFailed
+from app.core.idempotency import run_idempotent
+from app.core.pagination import Page, PageParams, page_params, paginate
+from app.modules.accounting import api as accounting
+from app.modules.attribution import api as attribution
+from app.modules.auth.api import CurrentUser, require, require_any
+from app.modules.payments import service
+from app.modules.payments.models import PaymentAccount, PaymentEntry
+from app.modules.settings import api as settings
+
+router = APIRouter(tags=["payments"])
+
+Direction = Literal["receive", "pay", "internal_transfer"]
+Quantity = Annotated[Decimal, Field(max_digits=38, decimal_places=18)]
+Rate = Annotated[Decimal, Field(gt=0, max_digits=30, decimal_places=12)]
+ReadPayments = Depends(require_any("payments.create", "reports.financial"))
+
+
+# ---- payment accounts ------------------------------------------------------------------------------
+
+
+class PaymentAccountOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    account_id: uuid.UUID
+    kind: str
+    currency: str
+    details: dict[str, Any]
+    notes: str | None
+    is_active: bool
+    version: int
+    account_code: str | None = None
+    account_name: str | None = None
+
+
+class PaymentAccountCreateIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    account_id: uuid.UUID
+    details: dict[str, str] = {}
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class PaymentAccountUpdateIn(BaseModel):
+    version: int
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    details: dict[str, str] | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+    is_active: bool | None = None
+
+
+def _mask(details: dict[str, Any]) -> dict[str, Any]:
+    """Account numbers and wallet addresses are shown in full only to people who manage them."""
+    return {k: (f"•••• {v[-4:]}" if isinstance(v, str) and len(v) > 6 else v) for k, v in details.items()}
+
+
+async def _pa_out(session: AsyncSession, pa: PaymentAccount, user: CurrentUser) -> PaymentAccountOut:
+    account = await accounting.get_account(session, pa.account_id)
+    out = PaymentAccountOut.model_validate(pa).model_copy(
+        update={"account_code": account.code, "account_name": account.name}
+    )
+    if not user.can("payment_accounts.manage"):
+        out.details = _mask(out.details)
+    return out
+
+
+@router.get("/payment-accounts", response_model=list[PaymentAccountOut])
+async def list_payment_accounts(
+    include_inactive: bool = False,
+    user: CurrentUser = Depends(require_any("payments.create", "payment_accounts.manage", "reports.financial")),
+    session: AsyncSession = Depends(get_session),
+) -> list[PaymentAccountOut]:
+    return [
+        await _pa_out(session, pa, user)
+        for pa in await service.list_payment_accounts(session, include_inactive=include_inactive)
+    ]
+
+
+@router.post("/payment-accounts", response_model=PaymentAccountOut, status_code=201)
+async def create_payment_account(
+    body: PaymentAccountCreateIn,
+    user: CurrentUser = Depends(require("payment_accounts.manage")),
+    session: AsyncSession = Depends(get_session),
+) -> PaymentAccountOut:
+    pa = await service.create_payment_account(session, actor_id=user.id, **body.model_dump())
+    await session.commit()
+    return await _pa_out(session, pa, user)
+
+
+@router.patch("/payment-accounts/{pa_id}", response_model=PaymentAccountOut)
+async def update_payment_account(
+    pa_id: uuid.UUID,
+    body: PaymentAccountUpdateIn,
+    user: CurrentUser = Depends(require("payment_accounts.manage")),
+    session: AsyncSession = Depends(get_session),
+) -> PaymentAccountOut:
+    pa = await service.update_payment_account(
+        session,
+        actor_id=user.id,
+        pa_id=pa_id,
+        version=body.version,
+        changes=body.model_dump(exclude_unset=True, exclude={"version"}),
+    )
+    await session.commit()
+    return await _pa_out(session, pa, user)
+
+
+# ---- payment entries: schemas ----------------------------------------------------------------------
+
+
+class SplitRow(BaseModel):
+    employee_id: uuid.UUID
+    percent: Decimal | None = Field(default=None, gt=0, le=100, max_digits=7, decimal_places=4)
+    amount: Decimal | None = Field(default=None, gt=0, max_digits=20, decimal_places=4)
+    project_id: uuid.UUID | None = None
+
+    def to_service(self) -> attribution.SplitIn:
+        return attribution.SplitIn(**self.model_dump())
+
+
+class EntryFields(BaseModel):
+    posting_date: date
+    direction: Direction
+    party_id: uuid.UUID | None = None
+    method_category_id: uuid.UUID | None = None
+    method_other_text: str | None = Field(default=None, max_length=120)
+    purpose_category_id: uuid.UUID | None = None
+    purpose_other_text: str | None = Field(default=None, max_length=120)
+    category_id: uuid.UUID | None = None
+    category_other_text: str | None = Field(default=None, max_length=120)
+    paid_from_payment_account_id: uuid.UUID | None = None
+    paid_to_payment_account_id: uuid.UUID | None = None
+    counter_account_id: uuid.UUID | None = None
+    amount: Quantity = Field(gt=0)
+    exchange_rate: Rate = Decimal(1)
+    received_amount: Quantity | None = None
+    received_exchange_rate: Rate | None = None
+    fee_amount: Quantity = Field(default=Decimal(0), ge=0)
+    fee_paid_by: Literal["client", "company"] = "company"
+    project_id: uuid.UUID | None = None
+    employee_id: uuid.UUID | None = None
+    reference_no: str | None = Field(default=None, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+
+
+class EntryCreateIn(EntryFields):
+    allocations: list[SplitRow] | None = Field(default=None, max_length=50)
+
+
+class EntryUpdateIn(BaseModel):
+    version: int
+    posting_date: date | None = None
+    direction: Direction | None = None
+    party_id: uuid.UUID | None = None
+    method_category_id: uuid.UUID | None = None
+    method_other_text: str | None = Field(default=None, max_length=120)
+    purpose_category_id: uuid.UUID | None = None
+    purpose_other_text: str | None = Field(default=None, max_length=120)
+    category_id: uuid.UUID | None = None
+    category_other_text: str | None = Field(default=None, max_length=120)
+    paid_from_payment_account_id: uuid.UUID | None = None
+    paid_to_payment_account_id: uuid.UUID | None = None
+    counter_account_id: uuid.UUID | None = None
+    amount: Quantity | None = Field(default=None, gt=0)
+    exchange_rate: Rate | None = None
+    received_amount: Quantity | None = None
+    received_exchange_rate: Rate | None = None
+    fee_amount: Quantity | None = Field(default=None, ge=0)
+    fee_paid_by: Literal["client", "company"] | None = None
+    project_id: uuid.UUID | None = None
+    employee_id: uuid.UUID | None = None
+    reference_no: str | None = Field(default=None, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    allocations: list[SplitRow] | None = Field(default=None, max_length=50)
+
+
+class AllocationOut(BaseModel):
+    employee_id: uuid.UUID
+    employee_name: str | None
+    project_id: uuid.UUID | None
+    method: str
+    percent: Decimal | None
+    amount: Decimal | None
+    status: str
+
+
+class EntryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    number: str
+    posting_date: date
+    direction: str
+    status: str
+    party_id: uuid.UUID | None
+    method_category_id: uuid.UUID | None
+    method_other_text: str | None
+    purpose_category_id: uuid.UUID | None
+    purpose_other_text: str | None
+    category_id: uuid.UUID | None
+    category_other_text: str | None
+    paid_from_payment_account_id: uuid.UUID | None
+    paid_to_payment_account_id: uuid.UUID | None
+    counter_account_id: uuid.UUID | None
+    amount: Decimal
+    currency: str
+    exchange_rate: Decimal
+    received_amount: Decimal | None
+    received_currency: str | None
+    received_exchange_rate: Decimal | None
+    fee_amount: Decimal
+    fee_paid_by: str
+    base_amount: Decimal | None
+    eligible_amount_base: Decimal | None
+    project_id: uuid.UUID | None
+    employee_id: uuid.UUID | None
+    reference_no: str | None
+    description: str | None
+    journal_entry_id: uuid.UUID | None
+    reversal_journal_entry_id: uuid.UUID | None
+    amended_from_id: uuid.UUID | None
+    submitted_at: datetime | None
+    submitted_by: uuid.UUID | None
+    cancelled_at: datetime | None
+    cancel_reason: str | None
+    reconciled_at: datetime | None
+    created_at: datetime
+    created_by: uuid.UUID | None
+    version: int
+    party_name: str | None = None
+    project_name: str | None = None
+    allocations: list[AllocationOut] = []
+
+
+class PaymentPreviewLine(BaseModel):
+    account_id: uuid.UUID
+    account_code: str
+    account_name: str
+    debit: Decimal
+    credit: Decimal
+    currency: str
+    amount_in_currency: Decimal
+    description: str | None
+
+
+class PaymentPreviewOut(BaseModel):
+    ok: bool
+    errors: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    lines: list[PaymentPreviewLine] = []
+    base_currency: str
+    base_amount: Decimal | None = None
+    eligible_amount_base: Decimal | None = None
+    allocations: list[AllocationOut] = []
+    allocated_total: Decimal | None = None
+
+
+class CancelIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class ReconcileIn(BaseModel):
+    reconciled: bool
+
+
+# ---- payment entries: helpers ----------------------------------------------------------------------
+
+
+async def _allocations_out(
+    session: AsyncSession, rows: list[Any], amounts: list[Decimal] | None = None
+) -> list[AllocationOut]:
+    names = await lookup.resolve(session, "employee", (r.employee_id for r in rows))
+    return [
+        AllocationOut(
+            employee_id=r.employee_id,
+            employee_name=names.get(r.employee_id),
+            project_id=r.project_id,
+            method=r.method,
+            percent=r.percent,
+            amount=amounts[i] if amounts is not None else r.amount_base,
+            status=r.status,
+        )
+        for i, r in enumerate(rows)
+    ]
+
+
+async def _entry_out(session: AsyncSession, pe: PaymentEntry, *, refresh: bool = False) -> EntryOut:
+    if refresh:  # after a write: return stored values (database scale), not in-memory ones
+        await session.flush()
+        await session.refresh(pe)
+    out = EntryOut.model_validate(pe)
+    parties = await lookup.resolve(session, "party", [pe.party_id])
+    projects = await lookup.resolve(session, "project", [pe.project_id])
+    rows = await attribution.for_payment(session, pe.id)
+    return out.model_copy(
+        update={
+            "party_name": parties.get(pe.party_id) if pe.party_id else None,
+            "project_name": projects.get(pe.project_id) if pe.project_id else None,
+            "allocations": await _allocations_out(session, rows),
+        }
+    )
+
+
+async def _preview(session: AsyncSession, pe: PaymentEntry, splits: list[Any]) -> PaymentPreviewOut:
+    base = await settings.base_currency(session)
+    try:
+        result, prepared = await service.preview(session, pe)
+    except ValidationFailed as exc:
+        return PaymentPreviewOut(
+            ok=False, errors=exc.errors or [{"field": "", "message": exc.detail}], base_currency=base.code
+        )
+    out = PaymentPreviewOut(
+        ok=True,
+        warnings=result.warnings,
+        base_currency=base.code,
+        base_amount=result.base_amount,
+        eligible_amount_base=result.eligible_amount_base,
+        lines=[
+            PaymentPreviewLine(
+                account_id=p.account.id,
+                account_code=p.account.code,
+                account_name=p.account.name,
+                debit=p.debit,
+                credit=p.credit,
+                currency=p.currency,
+                amount_in_currency=p.amount_in_currency,
+                description=p.line.description,
+            )
+            for p in prepared
+        ],
+    )
+    if result.eligible_amount_base is not None:
+        amounts = attribution.compute(splits, result.eligible_amount_base, base.precision) if splits else []
+        out.allocations = await _allocations_out(session, splits, amounts)
+        out.allocated_total = sum(amounts, Decimal(0))
+        if out.allocated_total != result.eligible_amount_base:
+            out.ok = False
+            out.errors.append(
+                {
+                    "field": "allocations",
+                    "code": "incomplete",
+                    "message": f"Split covers {out.allocated_total} of {result.eligible_amount_base}",
+                }
+            )
+    return out
+
+
+def _transient_splits(rows: list[SplitRow] | None, project_id: uuid.UUID | None) -> list[attribution.RevenueAllocation]:
+    method = "amount" if rows and rows[0].amount is not None and rows[0].percent is None else "percent"
+    return [
+        attribution.RevenueAllocation(
+            employee_id=r.employee_id,
+            project_id=r.project_id or project_id,
+            method=method,
+            percent=r.percent,
+            amount_base=r.amount,
+            status="draft",
+        )
+        for r in rows or []
+    ]
+
+
+# ---- payment entries: endpoints --------------------------------------------------------------------
+
+
+@router.get("/payment-entries", response_model=Page[EntryOut])
+async def list_entries(
+    params: PageParams = Depends(page_params),
+    status: Literal["draft", "submitted", "cancelled"] | None = None,
+    direction: Direction | None = None,
+    party_id: uuid.UUID | None = None,
+    project_id: uuid.UUID | None = None,
+    payment_account_id: uuid.UUID | None = None,
+    method_category_id: uuid.UUID | None = None,
+    purpose_category_id: uuid.UUID | None = None,
+    date_from: date | None = Query(default=None, alias="from"),
+    date_to: date | None = Query(default=None, alias="to"),
+    q: Annotated[str | None, Query(max_length=100)] = None,
+    format: Literal["json", "csv"] = "json",
+    _: CurrentUser = ReadPayments,
+    session: AsyncSession = Depends(get_session),
+) -> Any:
+    stmt = service.list_stmt(
+        status=status,
+        direction=direction,
+        party_id=party_id,
+        project_id=project_id,
+        payment_account_id=payment_account_id,
+        method_category_id=method_category_id,
+        purpose_category_id=purpose_category_id,
+        date_from=date_from,
+        date_to=date_to,
+        q=q,
+    )
+    if format == "csv":
+        rows = list((await session.execute(stmt.limit(20000))).scalars())
+        parties = await lookup.resolve(session, "party", (r.party_id for r in rows))
+        projects = await lookup.resolve(session, "project", (r.project_id for r in rows))
+        header = [
+            "number",
+            "posting_date",
+            "status",
+            "direction",
+            "party",
+            "project",
+            "amount",
+            "currency",
+            "base_amount",
+            "fee_amount",
+            "fee_paid_by",
+            "reference_no",
+            "description",
+        ]
+        return csv_response(
+            "payment-entries.csv",
+            header,
+            (
+                [
+                    r.number,
+                    r.posting_date,
+                    r.status,
+                    r.direction,
+                    parties.get(r.party_id, ""),
+                    projects.get(r.project_id, ""),
+                    r.amount,
+                    r.currency,
+                    r.base_amount,
+                    r.fee_amount,
+                    r.fee_paid_by,
+                    r.reference_no,
+                    r.description,
+                ]
+                for r in rows
+            ),
+        )
+    rows, total = await paginate(session, stmt, params)
+    return Page(
+        items=[await _entry_out(session, r) for r in rows], total=total, page=params.page, page_size=params.page_size
+    )
+
+
+@router.get("/payment-entries/proposal", response_model=list[SplitRow])
+async def proposal(
+    project_id: uuid.UUID,
+    _: CurrentUser = Depends(require("payments.create")),
+    session: AsyncSession = Depends(get_session),
+) -> list[SplitRow]:
+    return [
+        SplitRow(employee_id=s.employee_id, percent=s.percent, project_id=s.project_id)
+        for s in await attribution.proposal(session, project_id)
+    ]
+
+
+@router.get("/payment-entries/party-summary")
+async def party_summary(
+    party_id: uuid.UUID, _: CurrentUser = ReadPayments, session: AsyncSession = Depends(get_session)
+) -> dict[str, Decimal]:
+    return await service.party_totals(session, party_id)
+
+
+@router.post("/payment-entries/preview", response_model=PaymentPreviewOut)
+async def preview_unsaved(
+    body: EntryCreateIn,
+    _: CurrentUser = Depends(require("payments.create")),
+    session: AsyncSession = Depends(get_session),
+) -> PaymentPreviewOut:
+    pe = PaymentEntry(id=uuid.uuid4(), status="draft")
+    await service.apply_fields(session, pe, body.model_dump(exclude={"allocations"}))
+    rows = body.allocations
+    if rows is None and pe.project_id:  # same pre-fill a new draft gets (project default split)
+        rows = [
+            SplitRow(employee_id=s.employee_id, percent=s.percent, project_id=s.project_id)
+            for s in await attribution.proposal(session, pe.project_id)
+        ]
+    splits = _transient_splits(rows, pe.project_id)
+    out = await _preview(session, pe, splits)
+    await session.rollback()  # nothing from a preview is ever written
+    return out
+
+
+@router.get("/payment-entries/{pe_id}", response_model=EntryOut)
+async def get_entry(
+    pe_id: uuid.UUID, _: CurrentUser = ReadPayments, session: AsyncSession = Depends(get_session)
+) -> EntryOut:
+    return await _entry_out(session, await service.get(session, pe_id))
+
+
+@router.get("/payment-entries/{pe_id}/preview", response_model=PaymentPreviewOut)
+async def preview_saved(
+    pe_id: uuid.UUID, _: CurrentUser = ReadPayments, session: AsyncSession = Depends(get_session)
+) -> PaymentPreviewOut:
+    pe = await service.get(session, pe_id)
+    return await _preview(session, pe, await attribution.for_payment(session, pe.id))
+
+
+@router.post("/payment-entries", response_model=EntryOut, status_code=201)
+async def create_entry(
+    body: EntryCreateIn,
+    request: Request,
+    user: CurrentUser = Depends(require("payments.create")),
+    session: AsyncSession = Depends(get_session),
+) -> Any:
+    async def action() -> EntryOut:
+        splits = [r.to_service() for r in body.allocations] if body.allocations is not None else None
+        pe = await service.create_draft(
+            session, actor_id=user.id, data=body.model_dump(exclude={"allocations"}), splits=splits
+        )
+        return await _entry_out(session, pe, refresh=True)
+
+    return await run_idempotent(request, session, user.id, body.model_dump(mode="json"), action, status_code=201)
+
+
+@router.patch("/payment-entries/{pe_id}", response_model=EntryOut)
+async def update_entry(
+    pe_id: uuid.UUID,
+    body: EntryUpdateIn,
+    user: CurrentUser = Depends(require("payments.create")),
+    session: AsyncSession = Depends(get_session),
+) -> EntryOut:
+    changes = body.model_dump(exclude_unset=True, exclude={"version", "allocations"})
+    splits = [r.to_service() for r in body.allocations] if body.allocations is not None else None
+    pe = await service.update_draft(
+        session, actor_id=user.id, pe_id=pe_id, version=body.version, changes=changes, splits=splits
+    )
+    await session.commit()
+    return await _entry_out(session, pe, refresh=True)
+
+
+@router.delete("/payment-entries/{pe_id}", status_code=204)
+async def delete_entry(
+    pe_id: uuid.UUID,
+    user: CurrentUser = Depends(require("payments.create")),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    await service.delete_draft(session, actor_id=user.id, pe_id=pe_id)
+    await session.commit()
+    return Response(status_code=204)
+
+
+@router.post("/payment-entries/{pe_id}/submit", response_model=EntryOut)
+async def submit_entry(
+    pe_id: uuid.UUID,
+    request: Request,
+    user: CurrentUser = Depends(require("payments.submit")),
+    session: AsyncSession = Depends(get_session),
+) -> Any:
+    async def action() -> EntryOut:
+        return await _entry_out(session, await service.submit(session, actor_id=user.id, pe_id=pe_id), refresh=True)
+
+    return await run_idempotent(request, session, user.id, {"submit": str(pe_id)}, action, required=True)
+
+
+@router.post("/payment-entries/{pe_id}/cancel", response_model=EntryOut)
+async def cancel_entry(
+    pe_id: uuid.UUID,
+    body: CancelIn,
+    request: Request,
+    user: CurrentUser = Depends(require("payments.cancel")),
+    session: AsyncSession = Depends(get_session),
+) -> Any:
+    async def action() -> EntryOut:
+        pe = await service.cancel(session, actor_id=user.id, pe_id=pe_id, reason=body.reason)
+        return await _entry_out(session, pe, refresh=True)
+
+    return await run_idempotent(request, session, user.id, body.model_dump(mode="json"), action, required=True)
+
+
+@router.post("/payment-entries/{pe_id}/amend", response_model=EntryOut, status_code=201)
+async def amend_entry(
+    pe_id: uuid.UUID,
+    user: CurrentUser = Depends(require("payments.create")),
+    session: AsyncSession = Depends(get_session),
+) -> EntryOut:
+    pe = await service.amend(session, actor_id=user.id, pe_id=pe_id)
+    await session.commit()
+    return await _entry_out(session, pe)
+
+
+@router.post("/payment-entries/{pe_id}/reconcile", response_model=EntryOut)
+async def reconcile_entry(
+    pe_id: uuid.UUID,
+    body: ReconcileIn,
+    user: CurrentUser = Depends(require("payments.submit")),
+    session: AsyncSession = Depends(get_session),
+) -> EntryOut:
+    pe = await service.set_reconciled(session, actor_id=user.id, pe_id=pe_id, reconciled=body.reconciled)
+    await session.commit()
+    return await _entry_out(session, pe)

@@ -49,17 +49,27 @@ def migrate() -> None:
     command.upgrade(cfg, "head")
 
 
-async def seed(company: str) -> None:
+async def seed_all(session: Any, company: str) -> dict[str, int]:
+    """Idempotent: creates whatever is missing, never overwrites existing data."""
+    from app.modules.accounting import api as accounting
     from app.modules.categories import api as categories
+    from app.modules.payments import api as payments
     from app.modules.rbac import api as rbac
     from app.modules.settings import api as settings
 
+    await rbac.seed_default_roles(session)
+    await settings.seed(session, company_name=company)
+    created = {"categories": await categories.seed(session)}
+    created["accounts"] = await accounting.seed(session)
+    created["payment_accounts"] = await payments.seed_payment_accounts(session)
+    return created
+
+
+async def seed(company: str) -> None:
     async with SessionLocal() as session:
-        await rbac.seed_default_roles(session)
-        await settings.seed(session, company_name=company)
-        created = await categories.seed(session)
+        created = await seed_all(session, company)
         await session.commit()
-    print(f"seeded (new system categories: {created})")
+    print("seeded: " + ", ".join(f"{k} +{v}" for k, v in created.items()))
 
 
 async def create_user(email: str, name: str, password: str, role_key: str) -> bool:
@@ -77,6 +87,122 @@ async def create_user(email: str, name: str, password: str, role_key: str) -> bo
         await session.commit()
     print(f"created {role_key} {email}")
     return True
+
+
+async def demo_business() -> None:
+    """Sample data matching the reference scenario (docs/architecture.md, Section 16). Skipped if present."""
+    from datetime import date
+    from decimal import Decimal
+
+    from sqlalchemy import select
+
+    from app.modules.attribution import api as attribution
+    from app.modules.auth import api as auth
+    from app.modules.categories import api as categories
+    from app.modules.employees import api as employees
+    from app.modules.parties import api as parties
+    from app.modules.payments import service as payments
+    from app.modules.payments.models import PaymentAccount
+    from app.modules.projects import api as projects
+    from app.modules.projects import service as project_service
+
+    async with SessionLocal() as s:
+        if await parties.find_by_name(s, "customer", "Customer ABC"):
+            print("demo business data already present; skipped")
+            return
+        admin = await auth.get_user_by_email(s, "admin@example.com")
+        actor = admin.id if admin else None
+        cat = lambda g, k: categories.by_system_key(s, g, k)  # noqa: E731
+        full_time = await cat("employment_type", "full_time")
+        abc = await parties.create(
+            s, actor_id=actor, kind="customer", data={"name": "Customer ABC", "email": "ap@abc.example"}
+        )
+        await parties.create(s, actor_id=actor, kind="supplier", data={"name": "Cloud Hosting Inc."})
+        team = []
+        for name, email in (("Employee A", "alice@example.com"), ("Employee B", "bob@example.com")):
+            user = await auth.get_user_by_email(s, email)
+            team.append(
+                await employees.create(
+                    s,
+                    actor_id=actor,
+                    data={
+                        "full_name": name,
+                        "email": email,
+                        "employment_type_category_id": full_time.id,
+                        "start_date": date(date.today().year, 1, 1),
+                        "status": "active",
+                        "user_id": user.id if user else None,
+                    },
+                )
+            )
+        web = await cat("project_type", "web_development")
+        project = await projects.create(
+            s,
+            actor_id=actor,
+            data={
+                "name": "ABC Web Platform",
+                "customer_party_id": abc.id,
+                "project_type_category_id": web.id,
+                "contract_value": Decimal(10000),
+                "status": "active",
+                "start_date": date.today().replace(day=1),
+            },
+        )
+        await project_service.set_members(
+            s,
+            actor_id=actor,
+            project_id=project.id,
+            rows=[
+                {"employee_id": team[0].id, "default_allocation_pct": Decimal(60)},
+                {"employee_id": team[1].id, "default_allocation_pct": Decimal(40)},
+            ],
+        )
+        checking = (
+            await s.execute(select(PaymentAccount).where(PaymentAccount.name == "Company Checking"))
+        ).scalar_one()
+        receipt = await payments.create_draft(
+            s,
+            actor_id=actor,
+            splits=None,
+            data={
+                "posting_date": date.today(),
+                "direction": "receive",
+                "party_id": abc.id,
+                "project_id": project.id,
+                "method_category_id": (await cat("payment_method", "bank_transfer")).id,
+                "purpose_category_id": (await cat("payment_purpose", "project_payment")).id,
+                "paid_to_payment_account_id": checking.id,
+                "amount": Decimal(10000),
+                "exchange_rate": Decimal(1),
+                "fee_amount": Decimal(0),
+                "fee_paid_by": "company",
+                "reference_no": "WIRE-0001",
+                "description": "Milestone 1 payment",
+            },
+        )
+        assert await attribution.for_payment(s, receipt.id)  # pre-filled 60/40 from the project
+        await payments.submit(s, actor_id=actor, pe_id=receipt.id)
+        expense = await payments.create_draft(
+            s,
+            actor_id=actor,
+            splits=None,
+            data={
+                "posting_date": date.today(),
+                "direction": "pay",
+                "amount": Decimal("420.50"),
+                "exchange_rate": Decimal(1),
+                "fee_amount": Decimal(0),
+                "fee_paid_by": "company",
+                "paid_from_payment_account_id": checking.id,
+                "method_category_id": (await cat("payment_method", "bank_transfer")).id,
+                "purpose_category_id": (await cat("payment_purpose", "operating_expense")).id,
+                "category_id": (await cat("expense_category", "cloud_infrastructure")).id,
+                "description": "Monthly hosting",
+            },
+        )
+        await payments.submit(s, actor_id=actor, pe_id=expense.id)
+        await s.commit()
+    print("created demo business data: Customer ABC, Employees A and B, project, receipt, expense")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -107,6 +233,7 @@ def main(argv: list[str] | None = None) -> int:
         async def _demo() -> None:
             for email, name, role in DEMO_USERS:
                 await create_user(email, name, DEMO_PASSWORD, role)
+            await demo_business()
 
         _run(_demo())
         print(f"demo password for all demo users: {DEMO_PASSWORD}")

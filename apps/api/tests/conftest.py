@@ -22,19 +22,13 @@ from sqlalchemy import text  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine  # noqa: E402
 from sqlalchemy.pool import NullPool  # noqa: E402
 
-from app.cli import migrate  # noqa: E402
+from app.cli import migrate, seed_all  # noqa: E402
 from app.core.db import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.modules.auth import api as auth  # noqa: E402
-from app.modules.categories import api as categories  # noqa: E402
 from app.modules.rbac import api as rbac  # noqa: E402
-from app.modules.settings import api as settings  # noqa: E402
 
 PASSWORD = "Correct-Horse-9"
-DELETE_CATEGORY_LEAVES = (
-    "DELETE FROM categories c WHERE NOT EXISTS "
-    "(SELECT 1 FROM categories k WHERE k.parent_id = c.id OR k.merged_into_id = c.id)"
-)
 
 
 async def _reset_schema() -> None:
@@ -59,22 +53,14 @@ async def dispose_engine(database: None) -> AsyncIterator[None]:
 
 @pytest.fixture(autouse=True)
 async def clean_db(database: None) -> None:
-    # DELETE is far cheaper than TRUNCATE for tiny tables. audit_log is append-only (DELETE is blocked
-    # by its trigger), so it is the one table that is truncated.
+    """Empty every table, then seed. `replica` mode skips triggers and FK checks, so append-only tables
+    (audit log, ledger) can be cleared with cheap DELETEs in any order. Requires a superuser (dev/CI)."""
     async with SessionLocal() as session:
-        await session.execute(text("TRUNCATE audit_log"))
-        for table in reversed(Base.metadata.sorted_tables):  # children before parents
-            if table.name == "audit_log":
-                continue
-            if table.name == "categories":
-                # Self-referencing with ON DELETE RESTRICT (checked row by row): delete leaves first.
-                while (await session.execute(text(DELETE_CATEGORY_LEAVES))).rowcount:
-                    pass
-                continue
+        await session.execute(text("SET LOCAL session_replication_role = replica"))
+        for table in Base.metadata.sorted_tables:
             await session.execute(table.delete())
-        await rbac.seed_default_roles(session)
-        await settings.seed(session, company_name="Test Co")
-        await categories.seed(session)
+        await session.execute(text("SET LOCAL session_replication_role = origin"))
+        await seed_all(session, "Test Co")
         await session.commit()
 
 
