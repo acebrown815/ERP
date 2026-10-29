@@ -1,6 +1,6 @@
 #!/bin/sh
 # Restore a dump into a database. DESTRUCTIVE for the target database.
-#   docker compose -f infra/docker-compose.yml exec backup /restore.sh /backups/erp_<stamp>.dump [target_db]
+#   docker compose -f infra/docker-compose.yml exec backup sh /restore.sh /backups/erp_<stamp>.dump [target_db]
 # Default target is a scratch database "erp_restore" so you can check a backup without touching production
 # (the restore drill in docs/operations.md). Restoring over "erp" requires stopping api and worker first.
 set -eu

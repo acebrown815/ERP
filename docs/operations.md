@@ -51,7 +51,7 @@ The `backup` service writes `erp_<UTC timestamp>.dump` (PostgreSQL custom format
 Take one now:
 
 ```bash
-docker compose -f infra/docker-compose.yml exec backup /backup.sh
+docker compose -f infra/docker-compose.yml exec backup sh /backup.sh
 ```
 
 **Copy backups off the server.** The volume is on the same disk as the database. For example, every night:
@@ -68,7 +68,7 @@ Restore the latest dump into a scratch database and look at the counts. Producti
 
 ```bash
 docker compose -f infra/docker-compose.yml exec backup sh -c 'ls -1t /backups | head -3'
-docker compose -f infra/docker-compose.yml exec backup /restore.sh /backups/erp_<stamp>.dump      # into "erp_restore"
+docker compose -f infra/docker-compose.yml exec backup sh /restore.sh /backups/erp_<stamp>.dump      # into "erp_restore"
 ```
 
 It prints the schema version and the number of journal lines and payments. Compare with the live system (Trial Balance, Payment Entries). Then drop the scratch database:
@@ -80,7 +80,7 @@ docker compose -f infra/docker-compose.yml exec backup psql -d postgres -c 'DROP
 ## Restoring production (after data loss)
 
 1. `docker compose -f infra/docker-compose.yml stop api worker web`
-2. `docker compose -f infra/docker-compose.yml exec backup /restore.sh /backups/erp_<stamp>.dump erp`
+2. `docker compose -f infra/docker-compose.yml exec backup sh /restore.sh /backups/erp_<stamp>.dump erp`
 3. `docker compose -f infra/docker-compose.yml start api worker web`
 4. Sign in, open **Settings → System Checks**, and confirm everything passes.
 

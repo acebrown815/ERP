@@ -1,6 +1,6 @@
 #!/bin/sh
 # Nightly PostgreSQL backup with rotation. Runs inside the `backup` service (infra/docker-compose.yml),
-# or by hand:  docker compose -f infra/docker-compose.yml exec backup /backup.sh
+# or by hand:  docker compose -f infra/docker-compose.yml exec backup sh /backup.sh
 # Keeps BACKUP_KEEP_DAYS daily dumps (default 14) in /backups (the `backups` volume).
 set -eu
 : "${PGHOST:=postgres}" "${PGUSER:=erp}" "${PGDATABASE:=erp}" "${BACKUP_KEEP_DAYS:=14}"
