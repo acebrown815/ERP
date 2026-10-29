@@ -578,3 +578,48 @@ def blocking_stmt(task_id: uuid.UUID) -> Select[tuple[Task]]:
         .where(Task.id.in_(select(TaskDependency.task_id).where(TaskDependency.depends_on_task_id == task_id)))
         .order_by(Task.number)
     )
+
+
+async def scheduled(
+    session: AsyncSession,
+    *,
+    date_from: date,
+    date_to: date,
+    project_ids: set[uuid.UUID] | None = None,
+    assignee_ids: set[uuid.UUID] | None = None,
+    open_only: bool = False,
+) -> list[tuple[Task, list[uuid.UUID]]]:
+    """Tasks whose [start, due] touches the range (a task with only a due date sits on that day), with assignees.
+    For the calendar feed and workload; the rows stay the single source of truth."""
+    start = func.coalesce(Task.start_date, Task.due_date)
+    stmt = select(Task).where(Task.due_date.is_not(None), start <= date_to, Task.due_date >= date_from)
+    if project_ids is not None:
+        stmt = stmt.where(Task.project_id.in_(project_ids))
+    if assignee_ids is not None:
+        stmt = stmt.where(Task.id.in_(select(TaskAssignee.task_id).where(TaskAssignee.employee_id.in_(assignee_ids))))
+    if open_only:
+        stmt = stmt.where(Task.status != "done")
+    rows = list((await session.execute(stmt.order_by(Task.due_date))).scalars())
+    who = await assignees(session, [t.id for t in rows])
+    return [(t, who.get(t.id, [])) for t in rows]
+
+
+async def counts(
+    session: AsyncSession,
+    *,
+    today: date,
+    project_ids: set[uuid.UUID] | None = None,
+    assignee_id: uuid.UUID | None = None,
+) -> dict[str, int]:
+    """Open, overdue and due-within-7-days task counts."""
+    base = select(func.count()).select_from(Task).where(Task.status != "done")
+    if project_ids is not None:
+        base = base.where(Task.project_id.in_(project_ids))
+    if assignee_id is not None:
+        base = base.where(Task.id.in_(select(TaskAssignee.task_id).where(TaskAssignee.employee_id == assignee_id)))
+    week = date.fromordinal(today.toordinal() + 7)
+    return {
+        "open": (await session.execute(base)).scalar_one(),
+        "overdue": (await session.execute(base.where(Task.due_date < today))).scalar_one(),
+        "due_soon": (await session.execute(base.where(Task.due_date.between(today, week)))).scalar_one(),
+    }

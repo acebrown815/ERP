@@ -3,6 +3,8 @@
 from app.modules.employees.models import Employee
 from app.modules.employees.service import (
     active_ids,
+    active_in,
+    by_ids,
     by_party,
     create,
     create_department,
@@ -16,6 +18,8 @@ from app.modules.employees.service import (
 __all__ = [
     "Employee",
     "active_ids",
+    "active_in",
+    "by_ids",
     "by_party",
     "create",
     "create_department",

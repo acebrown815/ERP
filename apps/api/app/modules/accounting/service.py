@@ -720,3 +720,73 @@ async def project_ledger(
         else:
             row.expenses += (d or ZERO) - (c or ZERO)
     return out
+
+
+@dataclass
+class CategoryTotal:
+    account_id: uuid.UUID
+    code: str
+    name: str
+    category_id: uuid.UUID | None
+    amount: Decimal  # natural sign: income credit - debit, expense debit - credit
+    lines: int
+
+
+async def category_totals(
+    session: AsyncSession, *, root_type: str, date_from: date, date_to: date
+) -> list[CategoryTotal]:
+    """Income or expense per account and category over a date range (posted lines; reversals cancel out)."""
+    stmt = (
+        select(
+            Account.id,
+            Account.code,
+            Account.name,
+            JournalLine.category_id,
+            func.sum(JournalLine.debit_base),
+            func.sum(JournalLine.credit_base),
+            func.count(),
+        )
+        .join(Account, Account.id == JournalLine.account_id)
+        .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
+        .where(Account.root_type == root_type, JournalEntry.posting_date.between(date_from, date_to))
+        .group_by(Account.id, Account.code, Account.name, JournalLine.category_id)
+        .order_by(Account.code)
+    )
+    out = []
+    for aid, code, name, cat, d, c, n in (await session.execute(stmt)).all():
+        amount = (c or ZERO) - (d or ZERO) if root_type == "income" else (d or ZERO) - (c or ZERO)
+        if amount:
+            out.append(CategoryTotal(aid, code, name, cat, amount, n))
+    return out
+
+
+@dataclass
+class PeriodTotals:
+    income: Decimal = ZERO
+    expenses: Decimal = ZERO  # excluding salaries
+    salary: Decimal = ZERO
+
+    @property
+    def profit(self) -> Decimal:
+        return self.income - self.expenses - self.salary
+
+
+async def period_totals(session: AsyncSession, date_from: date, date_to: date) -> PeriodTotals:
+    stmt = (
+        select(
+            Account.root_type, Account.system_key, func.sum(JournalLine.debit_base), func.sum(JournalLine.credit_base)
+        )
+        .join(Account, Account.id == JournalLine.account_id)
+        .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
+        .where(Account.root_type.in_(("income", "expense")), JournalEntry.posting_date.between(date_from, date_to))
+        .group_by(Account.root_type, Account.system_key)
+    )
+    out = PeriodTotals()
+    for root_type, key, d, c in (await session.execute(stmt)).all():
+        if root_type == "income":
+            out.income += (c or ZERO) - (d or ZERO)
+        elif key == "salary_expense":
+            out.salary += (d or ZERO) - (c or ZERO)
+        else:
+            out.expenses += (d or ZERO) - (c or ZERO)
+    return out

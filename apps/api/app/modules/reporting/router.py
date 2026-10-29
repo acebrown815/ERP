@@ -3,18 +3,20 @@
 import uuid
 from datetime import date
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import lookup
-from app.core.csv_export import csv_response
 from app.core.db import get_session
+from app.core.exports import Format, export_response
 from app.modules.accounting import api as accounting
 from app.modules.attribution import api as attribution
 from app.modules.auth.api import CurrentUser, require
+from app.modules.categories import api as categories
+from app.modules.payments import api as payments
 from app.modules.projects import api as projects
 from app.modules.rbac.api import Scope
 from app.modules.salary import api as salary
@@ -129,7 +131,7 @@ async def project_profitability(
     status: Literal["planned", "active", "on_hold", "completed", "cancelled"] | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
-    format: Literal["json", "csv"] = "json",
+    format: Format = "json",
     user: CurrentUser = Financials,
     session: AsyncSession = Depends(get_session),
 ) -> Any:
@@ -141,7 +143,7 @@ async def project_profitability(
     rows = list((await session.execute(stmt.limit(500))).scalars())
     out = sorted(await _financials(session, rows, date_from, date_to), key=lambda r: -r.profit_cash)
     await session.commit()
-    if format == "csv":
+    if format != "json":
         fields = [
             "number",
             "name",
@@ -159,5 +161,340 @@ async def project_profitability(
             "completion_pct",
             "logged_hours",
         ]
-        return csv_response("project-profitability.csv", fields, ([getattr(r, f) for f in fields] for r in out))
+        return export_response(format, "project-profitability", fields, ([getattr(r, f) for f in fields] for r in out))
     return out
+
+
+# ---- income / expense by category ------------------------------------------------------------------
+
+
+class CategoryRow(BaseModel):
+    account_code: str
+    account_name: str
+    category_id: uuid.UUID | None
+    category_name: str | None
+    amount: Decimal
+    lines: int
+    share_pct: Decimal
+
+
+class CategoryReportOut(BaseModel):
+    kind: str
+    date_from: date
+    date_to: date
+    base_currency: str
+    rows: list[CategoryRow]
+    total: Decimal
+
+
+Report = Depends(require("reports.financial"))
+
+
+@router.get("/reports/by-category", response_model=CategoryReportOut)
+async def by_category(
+    kind: Literal["income", "expense"],
+    date_from: Annotated[date, Query(alias="from")],
+    date_to: Annotated[date, Query(alias="to")],
+    format: Format = "json",
+    _: CurrentUser = Report,
+    session: AsyncSession = Depends(get_session),
+) -> Any:
+    """Income or expenses per account and category (what the payment was classified as)."""
+    rows = await accounting.category_totals(session, root_type=kind, date_from=date_from, date_to=date_to)
+    names = {}
+    for cid in {r.category_id for r in rows if r.category_id}:
+        names[cid] = (await categories.get(session, cid)).name
+    total = sum((r.amount for r in rows), ZERO)
+    out = [
+        CategoryRow(
+            account_code=r.code,
+            account_name=r.name,
+            category_id=r.category_id,
+            category_name=names.get(r.category_id) if r.category_id else None,
+            amount=r.amount,
+            lines=r.lines,
+            share_pct=(r.amount * 100 / total).quantize(Decimal("0.1")) if total else ZERO,
+        )
+        for r in sorted(rows, key=lambda r: -r.amount)
+    ]
+    if format != "json":
+        title = ("Income" if kind == "income" else "Expenses") + f" by category, {date_from} to {date_to}"
+        return export_response(
+            format,
+            f"{kind}-by-category_{date_from}_{date_to}",
+            ["account", "category", "amount", "share %", "lines"],
+            [
+                *(
+                    [f"{r.account_code} {r.account_name}", r.category_name or "-", r.amount, r.share_pct, r.lines]
+                    for r in out
+                ),
+                ["Total", "", total, Decimal(100) if total else ZERO, sum(r.lines for r in out)],
+            ],
+            title=title,
+        )
+    base = (await settings.base_currency(session)).code
+    return CategoryReportOut(kind=kind, date_from=date_from, date_to=date_to, base_currency=base, rows=out, total=total)
+
+
+# ---- customer / supplier payments ------------------------------------------------------------------
+
+
+class PartyRow(BaseModel):
+    party_id: uuid.UUID | None
+    party_name: str
+    payments: int
+    total: Decimal
+    last_payment: date | None
+    share_pct: Decimal
+
+
+class PartyReportOut(BaseModel):
+    direction: str
+    date_from: date
+    date_to: date
+    base_currency: str
+    rows: list[PartyRow]
+    total: Decimal
+
+
+@router.get("/reports/party-payments", response_model=PartyReportOut)
+async def party_payments(
+    direction: Literal["receive", "pay"],
+    date_from: Annotated[date, Query(alias="from")],
+    date_to: Annotated[date, Query(alias="to")],
+    format: Format = "json",
+    _: CurrentUser = Report,
+    session: AsyncSession = Depends(get_session),
+) -> Any:
+    """Money received per customer (receive) or paid per supplier / payee (pay), in the base currency."""
+    rows = await payments.party_totals_between(session, direction=direction, date_from=date_from, date_to=date_to)
+    names = await lookup.resolve(session, "party", (p for p, *_ in rows))
+    total = sum((t for _, _, t, _ in rows), ZERO)
+    no_party = "No party (transfers, owner)" if direction == "pay" else "No party"
+    out = sorted(
+        (
+            PartyRow(
+                party_id=p,
+                party_name=names.get(p, "?") if p else no_party,
+                payments=n,
+                total=t,
+                last_payment=last,
+                share_pct=(t * 100 / total).quantize(Decimal("0.1")) if total else ZERO,
+            )
+            for p, n, t, last in rows
+        ),
+        key=lambda r: -r.total,
+    )
+    label = "customer-payments" if direction == "receive" else "supplier-payments"
+    if format != "json":
+        who = "Customer" if direction == "receive" else "Supplier"
+        return export_response(
+            format,
+            f"{label}_{date_from}_{date_to}",
+            ["party", "payments", "total", "share %", "last payment"],
+            [
+                *([r.party_name, r.payments, r.total, r.share_pct, r.last_payment] for r in out),
+                ["Total", sum(r.payments for r in out), total, "", ""],
+            ],
+            title=f"{who} payments, {date_from} to {date_to}",
+        )
+    base = (await settings.base_currency(session)).code
+    return PartyReportOut(
+        direction=direction, date_from=date_from, date_to=date_to, base_currency=base, rows=out, total=total
+    )
+
+
+# ---- monthly summary (salary periods) --------------------------------------------------------------
+
+
+class MonthRow(BaseModel):
+    period_id: uuid.UUID | None
+    label: str
+    start_date: date
+    end_date: date
+    status: str
+    income: Decimal
+    expenses: Decimal
+    salary_paid: Decimal
+    profit: Decimal
+    salary_calculated: Decimal
+
+
+class MonthlySummaryOut(BaseModel):
+    base_currency: str
+    rows: list[MonthRow]
+    totals: MonthRow | None
+
+
+@router.get("/reports/monthly-summary", response_model=MonthlySummaryOut)
+async def monthly_summary(
+    periods: Annotated[int, Query(ge=1, le=36)] = 12,
+    format: Format = "json",
+    _: CurrentUser = Report,
+    session: AsyncSession = Depends(get_session),
+) -> Any:
+    """Income, expenses, salary and profit per month, where a month is a salary period (Settings > Salary Cycle)."""
+    today = await settings.today(session)
+    started = [p for p in await salary.list_periods(session) if p.start_date <= today][:periods]
+    bal = await salary.balances(session, None, until=today)
+    calculated: dict[uuid.UUID, Decimal] = {}
+    for b in bal.values():
+        for line in b.lines:
+            calculated[line.period.id] = calculated.get(line.period.id, ZERO) + line.calculated
+    rows = []
+    for p in reversed(started):
+        t = await accounting.period_totals(session, p.start_date, p.end_date)
+        rows.append(
+            MonthRow(
+                period_id=p.id,
+                label=p.label,
+                start_date=p.start_date,
+                end_date=p.end_date,
+                status=p.status,
+                income=t.income,
+                expenses=t.expenses,
+                salary_paid=t.salary,
+                profit=t.profit,
+                salary_calculated=calculated.get(p.id, ZERO),
+            )
+        )
+    await session.commit()
+    totals = None
+    if rows:
+        totals = MonthRow(
+            period_id=None,
+            label="Total",
+            start_date=rows[0].start_date,
+            end_date=rows[-1].end_date,
+            status="",
+            income=sum((r.income for r in rows), ZERO),
+            expenses=sum((r.expenses for r in rows), ZERO),
+            salary_paid=sum((r.salary_paid for r in rows), ZERO),
+            profit=sum((r.profit for r in rows), ZERO),
+            salary_calculated=sum((r.salary_calculated for r in rows), ZERO),
+        )
+    if format != "json":
+        return export_response(
+            format,
+            "monthly-summary",
+            ["month", "from", "to", "income", "expenses", "salary paid", "profit", "salary calculated"],
+            [
+                [r.label, r.start_date, r.end_date, r.income, r.expenses, r.salary_paid, r.profit, r.salary_calculated]
+                for r in [*rows, *([totals] if totals else [])]
+            ],
+            title="Monthly summary (salary periods)",
+        )
+    return MonthlySummaryOut(base_currency=(await settings.base_currency(session)).code, rows=rows, totals=totals)
+
+
+# ---- company dashboard -----------------------------------------------------------------------------
+
+
+class AtRisk(BaseModel):
+    project_id: uuid.UUID
+    number: str
+    name: str
+    reasons: list[str]
+
+
+class Upcoming(BaseModel):
+    kind: str  # milestone | deadline
+    title: str
+    date: date
+    project_id: uuid.UUID
+    link: str
+
+
+class DashboardOut(BaseModel):
+    base_currency: str
+    period_label: str
+    period_start: date
+    period_end: date
+    cash_book: Decimal
+    cash_market: Decimal
+    income: Decimal
+    expenses: Decimal
+    salary_paid: Decimal
+    profit: Decimal
+    salary_owed: Decimal  # earned by employees, not yet paid (all periods)
+    salary_projected: Decimal  # this period's calculated salary so far
+    tasks_open: int
+    tasks_overdue: int
+    tasks_due_soon: int
+    projects_active: int
+    at_risk: list[AtRisk]
+    upcoming: list[Upcoming]
+
+
+def _risk_reasons(p: Any, f: ProjectFinancialsOut, today: date) -> list[str]:
+    reasons = []
+    if p.deadline and p.deadline < today:
+        reasons.append(f"past its deadline ({p.deadline.isoformat()})")
+    if f.budget_remaining is not None and f.budget_remaining < 0:
+        reasons.append("over budget")
+    if f.tasks_overdue:
+        reasons.append(f"{f.tasks_overdue} overdue task{'s' if f.tasks_overdue > 1 else ''}")
+    if f.profit_incl_owed < 0:
+        reasons.append("losing money")
+    return reasons
+
+
+@router.get("/dashboard/company", response_model=DashboardOut)
+async def company_dashboard(_: CurrentUser = Report, session: AsyncSession = Depends(get_session)) -> DashboardOut:
+    """Company at a glance. "This month" is the current salary period."""
+    today = await settings.today(session)
+    period = await salary.period_for(session, today)
+    t = await accounting.period_totals(session, period.start_date, period.end_date)
+    h = await accounting.holdings(session, today)
+    book = sum((x.book_value for x in h), ZERO)
+    market = sum((x.market_value if x.market_value is not None else x.book_value for x in h), ZERO)
+    bal = await salary.balances(session, None, until=today)
+    owed = sum((max(b.balance, ZERO) for b in bal.values()), ZERO)
+    projected = sum((line.calculated for b in bal.values() for line in b.lines if line.period.id == period.id), ZERO)
+    counts = await tasks.counts(session, today=today)
+    stmt = projects.list_stmt(q=None, status="active", customer_party_id=None, only_ids=None)
+    active = list((await session.execute(stmt)).scalars())
+    fin = {f.project_id: f for f in await _financials(session, active, None, None)}
+    risks = []
+    for p in active:
+        reasons = _risk_reasons(p, fin[p.id], today)
+        if reasons:
+            risks.append(AtRisk(project_id=p.id, number=p.number, name=p.name, reasons=reasons))
+    soon = date.fromordinal(today.toordinal() + 14)
+    upcoming = [
+        Upcoming(
+            kind="milestone",
+            title=m.name,
+            date=m.due_date,
+            project_id=m.project_id,
+            link=f"/projects/{m.project_id}?tab=timeline",
+        )
+        for m in await projects.milestones_between(session, None, today, soon)
+        if m.status not in ("done", "cancelled") and m.due_date
+    ] + [
+        Upcoming(kind="deadline", title=p.name, date=p.deadline, project_id=p.id, link=f"/projects/{p.id}")
+        for p in await projects.deadlines_between(session, None, today, soon)
+        if p.deadline
+    ]
+    upcoming.sort(key=lambda u: u.date)
+    await session.commit()
+    return DashboardOut(
+        base_currency=(await settings.base_currency(session)).code,
+        period_label=period.label,
+        period_start=period.start_date,
+        period_end=period.end_date,
+        cash_book=book,
+        cash_market=market,
+        income=t.income,
+        expenses=t.expenses,
+        salary_paid=t.salary,
+        profit=t.profit,
+        salary_owed=owed,
+        salary_projected=projected,
+        tasks_open=counts["open"],
+        tasks_overdue=counts["overdue"],
+        tasks_due_soon=counts["due_soon"],
+        projects_active=len(active),
+        at_risk=risks,
+        upcoming=upcoming[:12],
+    )

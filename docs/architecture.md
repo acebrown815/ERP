@@ -1,6 +1,6 @@
 # ERP for a Software Services Company — Architecture & Design (v0.6)
 
-Status: **Phases 1–4 built. All business rules agreed, including the salary follow-ups (Section 2.3).**
+Status: **All six phases built. All business rules agreed, including the salary follow-ups (Section 2.3).**
 Date: 2026-10-27 · v0.6 2026-10-28 (Phase 3 implementation notes)
 
 Contents
@@ -1377,4 +1377,4 @@ Change from v0.1: basic employees and minimal projects move into Phase 2, becaus
 
 ---
 
-**Progress:** Phase 1 ([notes](phase-1.md)), Phase 2 ([notes](phase-2.md)), Phase 3 ([notes](phase-3.md)) and Phase 4 ([notes](phase-4.md)) are built. Next: **Phase 5 — Calendar & Reporting**.
+**Progress:** Phase 1 ([notes](phase-1.md)), Phase 2 ([notes](phase-2.md)), Phase 3 ([notes](phase-3.md)) Phase 4 ([notes](phase-4.md)) and Phases 5–6 ([notes](phase-5-6.md)) are built. Operations: [runbook](operations.md), [admin guide](admin-guide.md).

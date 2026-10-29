@@ -79,16 +79,19 @@ export const NAV: NavSection[] = [
     label: "Calendar",
     icon: CalendarDays,
     items: [
-      { label: "My Calendar", href: "/calendar/me", phase: 5 },
-      { label: "Team Calendar", href: "/calendar/team", phase: 5 },
-      { label: "Company Calendar", href: "/calendar/company", phase: 5 },
+      { label: "My Calendar", href: "/calendar/me" },
+      { label: "Team Calendar", href: "/calendar/team" },
+      { label: "Company Calendar", href: "/calendar/company" },
     ],
   },
   {
     label: "Reports",
     icon: BarChart3,
     items: [
-      { label: "Financial Reports", href: "/accounting/statements", anyOf: ["reports.financial"] },
+      { label: "Financial Statements", href: "/accounting/statements", anyOf: ["reports.financial"] },
+      { label: "Monthly Summary", href: "/reports/monthly", anyOf: ["reports.financial"] },
+      { label: "Income & Expenses by Category", href: "/reports/categories", anyOf: ["reports.financial"] },
+      { label: "Customer & Supplier Payments", href: "/reports/parties", anyOf: ["reports.financial"] },
       { label: "Employee Salary Report", href: "/reports/employees", anyOf: ["salary.read"] },
       { label: "Project Reports", href: "/projects/financials", anyOf: ["projects.read_financials"] },
     ],
@@ -107,6 +110,7 @@ export const NAV: NavSection[] = [
       { label: "Salary Cycle", href: "/settings/salary-cycle", anyOf: ["salary.read", "salary.configure_cycle"] },
       { label: "Data Import", href: "/settings/imports", anyOf: ["imports.manage"] },
       { label: "Audit Log", href: "/settings/audit-logs", anyOf: ["audit.read"] },
+      { label: "System Checks", href: "/settings/system", anyOf: ["audit.read"] },
     ],
   },
 ];

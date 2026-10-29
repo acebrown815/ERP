@@ -5,9 +5,10 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import lookup
+from app.core import checks, lookup
 from app.modules.attachments import api as attachments
 from app.modules.auth.api import CurrentUser
+from app.modules.payments import checks as payment_checks
 from app.modules.payments.models import PaymentEntry
 
 
@@ -26,4 +27,8 @@ async def _numbers(session: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUI
 
 def setup() -> None:
     lookup.register("payment_entry", _numbers)
+    checks.register("revenue_splits", "Revenue splits match their receipts", payment_checks.revenue_splits)
+    checks.register(
+        "salary_links", "Salary records match salary payments and employee expenses", payment_checks.salary_links
+    )
     attachments.register_entity("payment_entry", can_read=_can_read, can_write=_can_write)

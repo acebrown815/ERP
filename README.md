@@ -3,7 +3,8 @@
 Web-based ERP for a software services company: double-entry accounting, payments, employee revenue attribution, salary, projects and calendars.
 
 - Design: [docs/architecture.md](docs/architecture.md)
-- Progress: [docs/phase-1.md](docs/phase-1.md), [docs/phase-2.md](docs/phase-2.md), [docs/phase-3.md](docs/phase-3.md), [docs/phase-4.md](docs/phase-4.md)
+- Progress: [docs/phase-1.md](docs/phase-1.md), [docs/phase-2.md](docs/phase-2.md), [docs/phase-3.md](docs/phase-3.md), [docs/phase-4.md](docs/phase-4.md), [docs/phase-5-6.md](docs/phase-5-6.md)
+- Running it: [docs/operations.md](docs/operations.md) (servers, backups, monitoring) · [docs/admin-guide.md](docs/admin-guide.md) (setup and month-end)
 
 ```
 apps/api     FastAPI modular monolith (Python, SQLAlchemy, Alembic, PostgreSQL)
@@ -34,7 +35,7 @@ python -m app.cli seed --company "Your Company"
 ERP_ADMIN_PASSWORD='choose-a-strong-one' python -m app.cli create-admin --email you@example.com --name "Your Name"
 python -m app.cli demo                           # optional demo users (password Demo-Pass-2026), sample data, salary formula
 uvicorn app.main:app --reload --port 8000
-python -m app.worker                             # background worker (separate terminal)
+python -m app.worker                             # background worker: outbox, reminders, nightly checks (separate terminal)
 ```
 
 **3. Web** (http://localhost:3000, proxies `/api` to the API)

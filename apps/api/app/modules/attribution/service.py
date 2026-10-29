@@ -246,3 +246,29 @@ async def project_totals(session: AsyncSession, project_ids: list[uuid.UUID]) ->
         .group_by(RevenueAllocation.project_id)
     )
     return dict(rows.all())  # type: ignore[arg-type]
+
+
+async def payment_totals(session: AsyncSession, payment_ids: list[uuid.UUID]) -> dict[uuid.UUID, Decimal]:
+    """Active split total per payment."""
+    if not payment_ids:
+        return {}
+    rows = await session.execute(
+        select(RevenueAllocation.payment_entry_id, func.sum(RevenueAllocation.amount_base))
+        .where(RevenueAllocation.status == "active", RevenueAllocation.payment_entry_id.in_(payment_ids))
+        .group_by(RevenueAllocation.payment_entry_id)
+    )
+    return dict(rows.all())  # type: ignore[arg-type]
+
+
+async def for_payments(session: AsyncSession, payment_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[RevenueAllocation]]:
+    """Splits of many payments in one query (list pages)."""
+    out: dict[uuid.UUID, list[RevenueAllocation]] = {p: [] for p in payment_ids}
+    if payment_ids:
+        rows = await session.execute(
+            select(RevenueAllocation)
+            .where(RevenueAllocation.payment_entry_id.in_(payment_ids))
+            .order_by(RevenueAllocation.created_at, RevenueAllocation.id)
+        )
+        for r in rows.scalars():
+            out[r.payment_entry_id].append(r)
+    return out

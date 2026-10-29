@@ -337,3 +337,23 @@ async def delete_milestone(session: AsyncSession, *, actor_id: uuid.UUID, milest
         entity_id=m.project_id,
         before={"name": m.name, "due_date": m.due_date},
     )
+
+
+async def milestones_between(
+    session: AsyncSession, project_ids: set[uuid.UUID] | None, date_from: Any, date_to: Any
+) -> list[Milestone]:
+    stmt = select(Milestone).where(Milestone.due_date.between(date_from, date_to))
+    if project_ids is not None:
+        stmt = stmt.where(Milestone.project_id.in_(project_ids))
+    return list((await session.execute(stmt)).scalars())
+
+
+async def deadlines_between(
+    session: AsyncSession, project_ids: set[uuid.UUID] | None, date_from: Any, date_to: Any
+) -> list[Project]:
+    stmt = select(Project).where(
+        Project.deadline.between(date_from, date_to), Project.status.in_(("planned", "active", "on_hold"))
+    )
+    if project_ids is not None:
+        stmt = stmt.where(Project.id.in_(project_ids))
+    return list((await session.execute(stmt)).scalars())

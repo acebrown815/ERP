@@ -248,3 +248,21 @@ async def department_by_name(session: AsyncSession, name: str) -> Department | N
     return (
         await session.execute(select(Department).where(func.lower(Department.name) == name.strip().lower()))
     ).scalar_one_or_none()
+
+
+async def by_ids(session: AsyncSession, ids: list[uuid.UUID]) -> list[Employee]:
+    if not ids:
+        return []
+    return list((await session.execute(select(Employee).where(Employee.id.in_(ids)))).scalars())
+
+
+async def active_in(
+    session: AsyncSession, *, department_id: uuid.UUID | None = None, on: date | None = None
+) -> list[Employee]:
+    """Current staff (not terminated), optionally of one department."""
+    stmt = select(Employee).where(Employee.status != "terminated").order_by(Employee.full_name)
+    if department_id:
+        stmt = stmt.where(Employee.department_id == department_id)
+    if on:
+        stmt = stmt.where(Employee.start_date <= on, or_(Employee.end_date.is_(None), Employee.end_date >= on))
+    return list((await session.execute(stmt)).scalars())

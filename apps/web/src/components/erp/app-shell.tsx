@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { ChangePasswordDialog } from "@/components/erp/change-password-dialog";
+import { NotificationsBell } from "@/components/erp/notifications-bell";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -185,6 +186,7 @@ export function AppShell({ companyName, children }: { companyName: string; child
             <Menu />
           </Button>
           <div className="flex-1" />
+          <NotificationsBell />
           <ThemeToggle />
           <UserMenu />
         </header>

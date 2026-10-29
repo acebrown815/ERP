@@ -9,9 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import lookup
-from app.core.csv_export import csv_response
 from app.core.db import get_session
 from app.core.errors import Conflict, NotFound, ValidationFailed, field_error
+from app.core.exports import Format, export_response
 from app.core.idempotency import run_idempotent
 from app.core.money import quantize
 from app.core.pagination import Page, PageParams, page_params, paginate
@@ -629,7 +629,6 @@ def _check_range(date_from: date, date_to: date) -> None:
         raise ValidationFailed("Invalid range", errors=[field_error("to", "End date is before start date")])
 
 
-Format = Literal["json", "csv"]
 Report = Depends(require("reports.financial"))
 
 
@@ -654,7 +653,7 @@ async def trial_balance(
             for f in ("opening_debit", "opening_credit", "debit", "credit", "closing_debit", "closing_credit")
         },
     )
-    if format == "csv":
+    if format != "json":
         fields = [
             "code",
             "name",
@@ -665,8 +664,9 @@ async def trial_balance(
             "closing_debit",
             "closing_credit",
         ]
-        return csv_response(
-            f"trial-balance_{date_from}_{date_to}.csv",
+        return export_response(
+            format,
+            f"trial-balance_{date_from}_{date_to}",
             fields,
             ([getattr(r, f) for f in fields] for r in [*rows, totals]),
         )
@@ -693,12 +693,14 @@ async def profit_and_loss(
         total_expenses=te,
         net_profit=ti - te,
     )
-    if format == "csv":
+    if format != "json":
         lines = [("Income", "", "", "")] + [(r.code, "  " * r.depth + r.name, r.amount, "") for r in out.income]
         lines += [("", "Total income", ti, ""), ("Expenses", "", "", "")]
         lines += [(r.code, "  " * r.depth + r.name, r.amount, "") for r in out.expenses]
         lines += [("", "Total expenses", te, ""), ("", "Net profit", ti - te, "")]
-        return csv_response(f"profit-and-loss_{date_from}_{date_to}.csv", ["code", "account", "amount", ""], lines)
+        return export_response(
+            format, f"profit-and-loss_{date_from}_{date_to}", ["code", "account", "amount", ""], lines
+        )
     return out
 
 
@@ -772,9 +774,10 @@ async def holdings(
     book_total = sum((c.book_value for c in currencies), Decimal(0))
     market_total = sum((c.market_value if c.market_value is not None else c.book_value for c in currencies), Decimal(0))
     missing = [c.currency for c in currencies if c.market_value is None and c.units]
-    if format == "csv":
-        return csv_response(
-            f"holdings_{as_of}.csv",
+    if format != "json":
+        return export_response(
+            format,
+            f"holdings_{as_of}",
             ["currency", "account", "units", "book_value", "rate", "rate_date", "market_value"],
             [
                 (c.currency, f"{h.code} {h.name}", h.units, h.book_value, h.rate, h.rate_date, h.market_value)
@@ -808,7 +811,7 @@ async def balance_sheet(
         total_equity=bs.total_equity,
         balanced=bs.balanced,
     )
-    if format == "csv":
+    if format != "json":
         lines: list[tuple[Any, ...]] = []
         for title, rows, total in (
             ("Assets", out.assets, out.total_assets),
@@ -823,7 +826,7 @@ async def balance_sheet(
             ("", "Current earnings (not yet closed)", out.unclosed_earnings),
             ("", "Total equity", out.total_equity),
         ]
-        return csv_response(f"balance-sheet_{as_of}.csv", ["code", "account", "amount"], lines)
+        return export_response(format, f"balance-sheet_{as_of}", ["code", "account", "amount"], lines)
     return out
 
 
@@ -865,7 +868,7 @@ async def general_ledger(
     total_debit = sum((r.debit for r in rows), Decimal(0))
     total_credit = sum((r.credit for r in rows), Decimal(0))
     closing = rows[-1].balance if rows and opening is not None else opening
-    if format == "csv":
+    if format != "json":
         fields = [
             "posting_date",
             "number",
@@ -879,8 +882,8 @@ async def general_ledger(
             "credit",
             "balance",
         ]
-        return csv_response(
-            f"general-ledger_{date_from}_{date_to}.csv", fields, ([getattr(r, f) for f in fields] for r in out_rows)
+        return export_response(
+            format, f"general-ledger_{date_from}_{date_to}", fields, ([getattr(r, f) for f in fields] for r in out_rows)
         )
     return LedgerOut(
         date_from=date_from,

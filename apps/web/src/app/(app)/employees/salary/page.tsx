@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Download, Lock, LockOpen, Plus, Trash2, Wallet } from "lucide-react";
+import { ChevronDown, ChevronRight, Lock, LockOpen, Plus, Trash2, Wallet } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/erp/confirm-dialog";
 import { FormField } from "@/components/erp/form-field";
 import { PageHeader } from "@/components/erp/page-header";
 import { EmptyState, ErrorState, TableSkeleton } from "@/components/erp/states";
+import { ExportMenu } from "@/components/erp/export-menu";
 import { Breakdown, defaultPeriod, formatRate, PeriodSelect, periodRange, SalaryStatus } from "@/components/salary/shared";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -22,9 +23,6 @@ import { useCompany, useSalaryPeriods } from "@/lib/queries";
 import { useCan } from "@/lib/session";
 import type { SalaryAdjustment, SalaryBoard, SalaryBoardRow } from "@/lib/types";
 import { cn, formatDateTime } from "@/lib/utils";
-
-// A file download from the API, not a page: a plain link on purpose.
-const SALARY_CSV = `${"/api/v1"}/reports/employee-salary?format=csv`;
 
 const errorText = (err: unknown) => (err instanceof ApiError ? [err.message, ...err.errors.map((e) => e.message)].join(" · ") : "Something went wrong");
 
@@ -185,7 +183,7 @@ export default function SalaryBoardPage() {
         actions={
           <>
             {periods.data && <PeriodSelect periods={periods.data} value={periodId} onChange={setPeriodId} />}
-            <Button variant="outline" asChild><a href={SALARY_CSV} download><Download /> CSV</a></Button>
+            <ExportMenu path="/reports/employee-salary" />
           </>
         }
       />

@@ -746,16 +746,29 @@ async def project_salary(
     if not project_ids:
         return out
     bal = await balances(session, None, until=until)
-    for emp, b in bal.items():
+    lines_by_period: dict[uuid.UUID, list[Line]] = defaultdict(list)
+    for b in bal.values():
         for line in b.lines:
-            if line.gross_revenue <= 0:
-                continue
-            rows = await attribution.employee_project_totals(
-                session, date_from=line.period.start_date, date_to=line.period.end_date, employee_ids=[emp]
-            )
-            for _, project_id, revenue, _ in rows:
-                if project_id in out and revenue:
-                    share = revenue / line.gross_revenue
-                    earned, paid = out[project_id]
-                    out[project_id] = (earned + max(line.calculated, ZERO) * share, paid + line.paid * share)
+            if line.gross_revenue > 0:
+                lines_by_period[line.period.id].append(line)
+    for lines in lines_by_period.values():  # one revenue query per period, not per employee
+        period = lines[0].period
+        rows = await attribution.employee_project_totals(
+            session, date_from=period.start_date, date_to=period.end_date, employee_ids=[x.employee_id for x in lines]
+        )
+        by_emp = {x.employee_id: x for x in lines}
+        for emp, project_id, revenue, _ in rows:
+            line = by_emp.get(emp)
+            if line and project_id in out and revenue:
+                share = revenue / line.gross_revenue
+                earned, paid = out[project_id]
+                out[project_id] = (earned + max(line.calculated, ZERO) * share, paid + line.paid * share)
     return {p: (quantize(e, 2), quantize(d, 2)) for p, (e, d) in out.items()}
+
+
+async def recorded_payment_ids(session: AsyncSession) -> set[uuid.UUID]:
+    return set((await session.execute(select(SalaryPayment.payment_entry_id))).scalars())
+
+
+async def recorded_expense_ids(session: AsyncSession) -> set[uuid.UUID]:
+    return set((await session.execute(select(EmployeeExpense.payment_entry_id))).scalars())

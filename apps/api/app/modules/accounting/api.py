@@ -1,14 +1,17 @@
 """Public facade of the accounting module. `post_journal` is the only way to write to the ledger."""
 
 from app.modules.accounting.models import MONEY_ACCOUNT_TYPES, Account, JournalEntry
+from app.modules.accounting.reports import holdings
 from app.modules.accounting.service import (
     LineIn,
     PreparedLine,
     account_by_code,
     account_by_system_key,
     carrying_rate,
+    category_totals,
     get_account,
     get_entry,
+    period_totals,
     post_journal,
     prepare_lines,
     project_ledger,
@@ -25,8 +28,11 @@ __all__ = [
     "account_by_code",
     "account_by_system_key",
     "carrying_rate",
+    "category_totals",
     "get_account",
     "get_entry",
+    "holdings",
+    "period_totals",
     "post_journal",
     "prepare_lines",
     "project_ledger",

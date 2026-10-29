@@ -551,3 +551,21 @@ async def party_totals(session: AsyncSession, party_id: uuid.UUID) -> dict[str, 
         out["received" if direction == "receive" else "paid"] += total or Decimal(0)
         out["count"] += count
     return out
+
+
+async def party_totals_between(
+    session: AsyncSession, *, direction: str, date_from: date, date_to: date
+) -> list[tuple[uuid.UUID | None, int, Decimal, date | None]]:
+    """(party, payments, base total, last payment date) for submitted payments in the range."""
+    rows = await session.execute(
+        select(
+            PaymentEntry.party_id, func.count(), func.sum(PaymentEntry.base_amount), func.max(PaymentEntry.posting_date)
+        )
+        .where(
+            PaymentEntry.status == "submitted",
+            PaymentEntry.direction == direction,
+            PaymentEntry.posting_date.between(date_from, date_to),
+        )
+        .group_by(PaymentEntry.party_id)
+    )
+    return [(p, n, t or Decimal(0), last) for p, n, t, last in rows.all()]

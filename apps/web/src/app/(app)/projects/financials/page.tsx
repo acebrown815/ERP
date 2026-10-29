@@ -1,15 +1,14 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Download } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
 import { PageHeader } from "@/components/erp/page-header";
 import { ErrorState, TableSkeleton } from "@/components/erp/states";
+import { ExportMenu } from "@/components/erp/export-menu";
 import { PROJECT_STATUS } from "@/components/projects/project-dialog";
 import { ProgressBar } from "@/components/projects/shared";
-import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
 import { Badge, Card } from "@/components/ui/misc";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
@@ -17,9 +16,6 @@ import { api } from "@/lib/api";
 import { formatAmount, sign, sum } from "@/lib/money";
 import type { ProjectFinancials } from "@/lib/types";
 import { cn } from "@/lib/utils";
-
-// A file download from the API, not a page: a plain link on purpose.
-const CSV = `${"/api/v1"}/reports/project-profitability?format=csv`;
 
 export default function ProjectFinancialsPage() {
   const [status, setStatus] = useState("");
@@ -40,7 +36,7 @@ export default function ProjectFinancialsPage() {
               <option value="">All statuses</option>
               {Object.entries(PROJECT_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </Select>
-            <Button variant="outline" asChild><a href={CSV} download><Download /> CSV</a></Button>
+            <ExportMenu path="/reports/project-profitability" params={{ status: status || undefined }} />
           </>
         }
       />

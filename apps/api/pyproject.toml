@@ -16,6 +16,9 @@ dependencies = [
     "python-multipart>=0.0.17",
     "structlog>=24.4",
     "tzdata>=2024.2",
+    "python-dateutil>=2.9",
+    "openpyxl>=3.1",
+    "reportlab>=4.2",
 ]
 
 [project.optional-dependencies]

@@ -1,32 +1,24 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, CheckCircle2, ChevronDown, ChevronRight, Circle, Plus } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarDays, ChevronDown, ChevronRight, Diamond, Flag, ListChecks, Plus } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useState } from "react";
 
-import { rangeText, usePeriodRanges } from "@/components/accounting/report-controls";
 import { PageHeader } from "@/components/erp/page-header";
 import { StatusBadge } from "@/components/payments/entry-view";
 import { Button } from "@/components/ui/button";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, Skeleton } from "@/components/ui/misc";
 import { api } from "@/lib/api";
-import { formatAmount, formatShort, sign, subtract } from "@/lib/money";
+import { formatAmount, formatShort, sign, subtract, sum } from "@/lib/money";
 import { currencyPrecision, useCompany, useCurrencies } from "@/lib/queries";
 import { useMe } from "@/lib/session";
-import type { Holdings, Page, PaymentEntry, ProfitLoss } from "@/lib/types";
+import { addDays, fmtDay, fmtTime, iso } from "@/components/calendar/utils";
+import { isOverdue } from "@/components/projects/shared";
+import type { CalendarFeed, CompanyDashboard, Holdings, Page, PaymentEntry, Task } from "@/lib/types";
 import { cn, formatDate } from "@/lib/utils";
 
-const PHASES = [
-  { n: 1, title: "Foundation", body: "Sign-in, roles & permissions, audit log, company settings, currencies, custom categories." },
-  { n: 2, title: "Accounting & Payments", body: "Chart of accounts, general ledger, payment entries, parties, employee revenue split, reports, import." },
-  { n: 3, title: "Salary", body: "Salary formulas, salary periods (e.g. 25th–24th), statements, salary payments." },
-  { n: 4, title: "Projects", body: "Tasks, Kanban, Gantt timeline, project financials." },
-  { n: 5, title: "Calendar & Reporting", body: "Calendars, dashboards, employee and project reports, exports." },
-  { n: 6, title: "Production readiness", body: "Hardening, backups, monitoring, documentation." },
-];
-const CURRENT_PHASE = 4;
 
 function Kpi({ label, value, base, tone, hint }: { label: string; value: string | undefined; base: string; tone?: "good" | "bad"; hint?: string }) {
   return (
@@ -48,15 +40,10 @@ function FinanceOverview() {
   const base = useCompany().data?.base_currency ?? "USD";
   const currencies = useCurrencies();
   const holdings = useQuery({ queryKey: ["holdings"], queryFn: () => api.get<Holdings>("/reports/holdings") });
-  // "This month" follows the salary cycle (e.g. Oct 25 – Nov 24), not the calendar month.
-  const { current, loading } = usePeriodRanges();
-  const month = { from: current.from, to: current.to };
-  const pl = useQuery({
-    queryKey: ["pl", month, null],
-    queryFn: () => api.get<ProfitLoss>("/reports/profit-and-loss", month),
-    enabled: !loading,
-  });
-  const span = `${current.label} · ${rangeText(current)}`;
+  // "This month" is the current salary period (e.g. Oct 25 – Nov 24), not the calendar month.
+  const dash = useQuery({ queryKey: ["dashboard-company"], queryFn: () => api.get<CompanyDashboard>("/dashboard/company") });
+  const d = dash.data;
+  const span = d ? `${d.period_label} · ${formatDate(d.period_start)} – ${formatDate(d.period_end)}` : undefined;
   const recent = useQuery({ queryKey: ["payment-entries", "recent"], queryFn: () => api.get<Page<PaymentEntry>>("/payment-entries", { page_size: 6 }) });
   const h = holdings.data;
   const fx = h ? subtract(h.market_total, h.book_total) : "0";
@@ -69,10 +56,71 @@ function FinanceOverview() {
           base={base}
           hint={h && sign(fx) ? `At today's rates · ${formatAmount(h.book_total)} as recorded` : "At today's rates"}
         />
-        <Kpi label="Income this month" value={pl.data?.total_income} base={base} hint={span} />
-        <Kpi label="Expenses this month" value={pl.data?.total_expenses} base={base} hint={span} />
-        <Kpi label="Net profit this month" value={pl.data?.net_profit} base={base} tone={pl.data && sign(pl.data.net_profit) < 0 ? "bad" : "good"} hint={span} />
+        <Kpi label="Income this month" value={d?.income} base={base} hint={span} />
+        <Kpi label="Expenses this month" value={d && sum([d.expenses, d.salary_paid])} base={base} hint={d ? `incl. ${formatAmount(d.salary_paid)} salary paid` : undefined} />
+        <Kpi label="Net profit this month" value={d?.profit} base={base} tone={d && sign(d.profit) < 0 ? "bad" : "good"} hint={span} />
       </div>
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Kpi label="Salary owed" value={d?.salary_owed} base={base} hint="Earned by employees, not paid yet" />
+        <Kpi label="Salary this month" value={d?.salary_projected} base={base} hint="Projected from revenue so far" />
+        <Card>
+          <CardContent className="py-4">
+            <p className="text-sm text-muted-foreground">Tasks</p>
+            {!d ? <Skeleton className="mt-1 h-8 w-32" /> : (
+              <p className="mt-1 text-2xl font-semibold">
+                <span className={cn("tabular", d.tasks_overdue > 0 && "text-destructive")}>{d.tasks_overdue}</span>{" "}
+                <span className="text-sm font-normal text-muted-foreground">overdue · {d.tasks_due_soon} due this week · {d.tasks_open} open</span>
+              </p>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-4">
+            <p className="text-sm text-muted-foreground">Active projects</p>
+            {!d ? <Skeleton className="mt-1 h-8 w-32" /> : (
+              <p className="mt-1 text-2xl font-semibold">
+                <span className="tabular">{d.projects_active}</span>{" "}
+                <span className={cn("text-sm font-normal", d.at_risk.length ? "text-warning" : "text-muted-foreground")}>{d.at_risk.length} need attention</span>
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+      {d && (d.at_risk.length > 0 || d.upcoming.length > 0) && (
+        <div className="mb-6 grid gap-6 lg:grid-cols-2">
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2"><AlertTriangle className="size-4 text-warning" /> Projects needing attention</CardTitle></CardHeader>
+            <CardContent>
+              {d.at_risk.length === 0 ? <p className="text-sm text-muted-foreground">None. All active projects are on track.</p> : (
+                <ul className="flex flex-col gap-2 text-sm">
+                  {d.at_risk.map((r) => (
+                    <li key={r.project_id}>
+                      <Link href={`/projects/${r.project_id}?tab=financials`} className="font-medium hover:underline">{r.name}</Link>
+                      <span className="text-muted-foreground"> · {r.reasons.join(", ")}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle>Coming up (2 weeks)</CardTitle></CardHeader>
+            <CardContent>
+              {d.upcoming.length === 0 ? <p className="text-sm text-muted-foreground">No milestones or deadlines.</p> : (
+                <ul className="flex flex-col gap-1.5 text-sm">
+                  {d.upcoming.map((u, i) => (
+                    <li key={i} className="flex items-center gap-2">
+                      {u.kind === "milestone" ? <Diamond className="size-3.5 text-violet-500" /> : <Flag className="size-3.5 text-destructive" />}
+                      <span className="w-24 shrink-0 text-muted-foreground">{formatDate(u.date)}</span>
+                      <Link href={u.link} className="truncate hover:underline">{u.kind === "deadline" ? `Deadline: ${u.title}` : u.title}</Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
       {h && <AssetsByCurrency holdings={h} />}
       <Card className="mb-6">
         <CardHeader className="flex-row items-center justify-between">
@@ -210,6 +258,58 @@ function AssetsByCurrency({ holdings }: { holdings: Holdings }) {
   );
 }
 
+/** My next seven days: tasks due (and overdue) plus calendar events. */
+function MyWeek() {
+  const today = iso(new Date());
+  const end = addDays(today, 7);
+  const tasks = useQuery({
+    queryKey: ["tasks", "my-week"],
+    queryFn: async () => {
+      const qs = new URLSearchParams([["assignee", "me"], ["page_size", "100"], ...["backlog", "todo", "in_progress", "review"].map((x) => ["status", x])]);
+      return (await api.get<Page<Task>>(`/tasks?${qs}`)).items;
+    },
+  });
+  const feed = useQuery({ queryKey: ["calendar", "my-week", today], queryFn: () => api.get<CalendarFeed>("/calendar/feed", { from: today, to: end, view: "me" }) });
+  const due = (tasks.data ?? []).filter((t) => t.due_date && t.due_date <= end).sort((a, b) => (a.due_date! < b.due_date! ? -1 : 1));
+  const events = (feed.data?.items ?? []).filter((i) => i.kind === "event" || i.kind === "leave").slice(0, 8);
+  return (
+    <Card className="lg:col-span-2">
+      <CardHeader className="flex-row items-center justify-between">
+        <CardTitle>This week</CardTitle>
+        <Button variant="ghost" size="sm" asChild><Link href="/calendar/me">Calendar <ArrowRight /></Link></Button>
+      </CardHeader>
+      <CardContent className="grid gap-6 sm:grid-cols-2">
+        <div>
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground"><ListChecks className="size-3.5" /> My tasks due</p>
+          {!tasks.data ? <Skeleton className="h-16 w-full" /> : due.length === 0 ? <p className="text-sm text-muted-foreground">Nothing due.</p> : (
+            <ul className="flex flex-col gap-1 text-sm">
+              {due.slice(0, 8).map((t) => (
+                <li key={t.id} className="flex gap-2">
+                  <span className={cn("w-20 shrink-0", isOverdue(t.due_date, t.status) ? "font-medium text-destructive" : "text-muted-foreground")}>{fmtDay(t.due_date!, { weekday: "short", day: "numeric" })}</span>
+                  <Link href={`/projects/${t.project_id}?tab=tasks`} className="truncate hover:underline">{t.title}</Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div>
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground"><CalendarDays className="size-3.5" /> Events</p>
+          {!feed.data ? <Skeleton className="h-16 w-full" /> : events.length === 0 ? <p className="text-sm text-muted-foreground">No events.</p> : (
+            <ul className="flex flex-col gap-1 text-sm">
+              {events.map((i) => (
+                <li key={i.key} className="flex gap-2">
+                  <span className="w-20 shrink-0 text-muted-foreground">{fmtDay(i.start.slice(0, 10), { weekday: "short", day: "numeric" })}{i.all_day ? "" : ` ${fmtTime(i.start)}`}</span>
+                  <span className="truncate">{i.title}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function DashboardPage() {
   const me = useMe();
   const firstName = me.full_name.split(/\s+/)[0];
@@ -221,6 +321,7 @@ export default function DashboardPage() {
     { href: "/employees/salary", label: "Salary board", show: "salary.read" in me.permissions && finance },
     { href: "/employees", label: "Employees", show: "employees.read" in me.permissions },
     { href: "/projects/tasks", label: "My tasks", show: "projects.read" in me.permissions },
+    { href: "/calendar/me", label: "My calendar", show: true },
     { href: "/projects", label: "Projects", show: "projects.read" in me.permissions },
     { href: "/settings/imports", label: "Import existing data", show: "imports.manage" in me.permissions },
     { href: "/settings/company", label: "Company settings", show: true },
@@ -231,25 +332,7 @@ export default function DashboardPage() {
       <PageHeader title={`Welcome, ${firstName}`} description={finance ? "This month at a glance, from the posted ledger." : undefined} />
       {finance && <FinanceOverview />}
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Rollout</CardTitle>
-            <CardDescription>What is available now and what comes next.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ol className="flex flex-col gap-4">
-              {PHASES.map((p) => (
-                <li key={p.n} className="flex gap-3">
-                  {p.n <= CURRENT_PHASE ? <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-success" aria-label="Available" /> : <Circle className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-label="Planned" />}
-                  <div>
-                    <p className="font-medium">Phase {p.n} · {p.title}</p>
-                    <p className="text-sm text-muted-foreground">{p.body}</p>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          </CardContent>
-        </Card>
+        <MyWeek />
         <Card>
           <CardHeader><CardTitle>Shortcuts</CardTitle></CardHeader>
           <CardContent>

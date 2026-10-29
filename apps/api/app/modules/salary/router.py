@@ -8,9 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import lookup
-from app.core.csv_export import csv_response
 from app.core.db import get_session
 from app.core.errors import NotFound
+from app.core.exports import Format, export_response
 from app.modules.attribution import api as attribution
 from app.modules.auth.api import CurrentUser, current_user, require
 from app.modules.compensation import api as compensation
@@ -24,7 +24,6 @@ from app.modules.settings import api as settings
 router = APIRouter(tags=["salary"])
 
 Money = Annotated[Decimal, Field(max_digits=20, decimal_places=4)]
-Format = Literal["json", "csv"]
 
 
 # ---- schemas ---------------------------------------------------------------------------------------
@@ -676,9 +675,10 @@ async def revenue_report(
         )
     rows.sort(key=lambda r: -r.total)
     totals = [sum((r.by_period[i] for r in rows), Decimal(0)) for i in range(len(periods))]
-    if format == "csv":
-        return csv_response(
-            "employee-revenue.csv",
+    if format != "json":
+        return export_response(
+            format,
+            "employee-revenue",
             ["employee", "period", "start", "end", "revenue", "expenses", "net"],
             [
                 (r.employee_name, p.label, p.start_date, p.end_date, g, x, n)
@@ -736,9 +736,10 @@ async def salary_report(
             )
         )
     rows.sort(key=lambda r: r.employee_name.lower())
-    if format == "csv":
-        return csv_response(
-            "employee-salary.csv",
+    if format != "json":
+        return export_response(
+            format,
+            "employee-salary",
             ["employee", "period", "start", "end", "revenue", "expenses", "net", "calculated", "paid", "status"],
             [
                 (

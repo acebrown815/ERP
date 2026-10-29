@@ -1,7 +1,6 @@
 "use client";
 
-import { Download } from "lucide-react";
-
+import { ExportMenu } from "@/components/erp/export-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useSalaryPeriods } from "@/lib/queries";
@@ -53,15 +52,9 @@ export function DateRange({ from, to, onChange }: { from: string; to: string; on
   );
 }
 
+/** Export button for the accounting reports: CSV, Excel or PDF. */
 export function CsvButton({ path, params }: { path: string; params: Record<string, string | undefined | null> }) {
-  const qs = new URLSearchParams(Object.entries({ ...params, format: "csv" }).filter(([, v]) => v) as [string, string][]);
-  return (
-    <Button variant="outline" asChild>
-      <a href={`/api/v1${path}?${qs}`}>
-        <Download /> CSV
-      </a>
-    </Button>
-  );
+  return <ExportMenu path={path} params={params} />;
 }
 
 /** Shortcuts for the current and previous salary period (the company's "month"). */

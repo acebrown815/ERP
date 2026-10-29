@@ -1,18 +1,16 @@
 "use client";
 
-import { Download } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
 import { Label } from "@/components/ui/misc";
 import type { SalaryPeriod } from "@/lib/types";
+import { ExportMenu } from "@/components/erp/export-menu";
 
 export type Range = { from?: string; to?: string };
 
 /** From/to salary period pickers plus CSV download. Empty range = the last six periods. */
 export function PeriodRange({ periods, value, onChange, csvPath }: { periods: SalaryPeriod[]; value: Range; onChange: (r: Range) => void; csvPath: string }) {
   const started = periods.filter((p) => !p.is_future);
-  const query = new URLSearchParams({ format: "csv", ...(value.from && value.to ? { from_period_id: value.from, to_period_id: value.to } : {}) });
   const pick = (key: "from" | "to") => (
     <Select id={`range_${key}`} className="w-auto" value={value[key] ?? ""} onChange={(e) => onChange({ ...value, [key]: e.target.value || undefined })}>
       <option value="">{key === "from" ? "Last 6 periods" : "Current"}</option>
@@ -23,7 +21,7 @@ export function PeriodRange({ periods, value, onChange, csvPath }: { periods: Sa
     <div className="flex flex-wrap items-end gap-2">
       <div className="flex flex-col gap-1"><Label htmlFor="range_from">From</Label>{pick("from")}</div>
       <div className="flex flex-col gap-1"><Label htmlFor="range_to">To</Label>{pick("to")}</div>
-      <Button variant="outline" asChild><a href={`/api/v1${csvPath}?${query}`}><Download /> CSV</a></Button>
+      <ExportMenu path={csvPath} params={value.from && value.to ? { from_period_id: value.from, to_period_id: value.to } : {}} />
     </div>
   );
 }

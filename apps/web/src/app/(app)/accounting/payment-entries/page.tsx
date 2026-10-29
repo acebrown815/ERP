@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Download, Plus, Search } from "lucide-react";
+import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Plus, Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -10,6 +10,7 @@ import { useMemo, useState } from "react";
 import { DataTable } from "@/components/erp/data-table";
 import { PageHeader } from "@/components/erp/page-header";
 import { EmptyState } from "@/components/erp/states";
+import { ExportMenu } from "@/components/erp/export-menu";
 import { StatusBadge } from "@/components/payments/entry-view";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
@@ -124,7 +125,6 @@ export default function PaymentEntriesPage() {
     [currencies.data],
   );
 
-  const csvHref = `/api/v1/payment-entries?${new URLSearchParams({ ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)), format: "csv" })}`;
 
   return (
     <>
@@ -133,11 +133,7 @@ export default function PaymentEntriesPage() {
         description="Every payment received, paid or moved between our accounts. Submitting a payment posts it to the ledger."
         actions={
           <>
-            <Button variant="outline" asChild>
-              <a href={csvHref}>
-                <Download /> CSV
-              </a>
-            </Button>
+            <ExportMenu path="/payment-entries" params={filters} />
             {can("payments.create") && (
               <Button asChild>
                 <Link href="/accounting/payment-entries/new">

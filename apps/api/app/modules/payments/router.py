@@ -8,9 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import lookup
-from app.core.csv_export import csv_response
 from app.core.db import get_session
 from app.core.errors import ValidationFailed
+from app.core.exports import Format, export_response
 from app.core.idempotency import run_idempotent
 from app.core.pagination import Page, PageParams, page_params, paginate
 from app.modules.accounting import api as accounting
@@ -328,6 +328,45 @@ async def _entry_out(session: AsyncSession, pe: PaymentEntry, *, refresh: bool =
     )
 
 
+async def _entries_out(session: AsyncSession, entries: list[PaymentEntry]) -> list[EntryOut]:
+    """List pages: the same as _entry_out, with every name and split loaded in a handful of queries."""
+    parties = await lookup.resolve(session, "party", (e.party_id for e in entries))
+    project_names = await lookup.resolve(session, "project", (e.project_id for e in entries))
+    periods = await lookup.resolve(session, "salary_period", (e.salary_period_id for e in entries))
+    splits = await attribution.for_payments(session, [e.id for e in entries])
+    people = await lookup.resolve(
+        session,
+        "employee",
+        [e.employee_id for e in entries] + [a.employee_id for rows in splits.values() for a in rows],
+    )
+    out = []
+    for e in entries:
+        allocations = [
+            AllocationOut(
+                employee_id=a.employee_id,
+                employee_name=people.get(a.employee_id),
+                project_id=a.project_id,
+                method=a.method,
+                percent=a.percent,
+                amount=a.amount_base,
+                status=a.status,
+            )
+            for a in splits.get(e.id, [])
+        ]
+        out.append(
+            EntryOut.model_validate(e).model_copy(
+                update={
+                    "party_name": parties.get(e.party_id) if e.party_id else None,
+                    "project_name": project_names.get(e.project_id) if e.project_id else None,
+                    "salary_period_label": periods.get(e.salary_period_id) if e.salary_period_id else None,
+                    "employee_name": people.get(e.employee_id) if e.employee_id else None,
+                    "allocations": allocations,
+                }
+            )
+        )
+    return out
+
+
 async def _preview(session: AsyncSession, pe: PaymentEntry, splits: list[Any]) -> PaymentPreviewOut:
     base = await settings.base_currency(session)
     try:
@@ -407,7 +446,7 @@ async def list_entries(
     date_from: date | None = Query(default=None, alias="from"),
     date_to: date | None = Query(default=None, alias="to"),
     q: Annotated[str | None, Query(max_length=100)] = None,
-    format: Literal["json", "csv"] = "json",
+    format: Format = "json",
     _: CurrentUser = ReadPayments,
     session: AsyncSession = Depends(get_session),
 ) -> Any:
@@ -423,7 +462,7 @@ async def list_entries(
         date_to=date_to,
         q=q,
     )
-    if format == "csv":
+    if format != "json":
         rows = list((await session.execute(stmt.limit(20000))).scalars())
         parties = await lookup.resolve(session, "party", (r.party_id for r in rows))
         projects = await lookup.resolve(session, "project", (r.project_id for r in rows))
@@ -455,8 +494,9 @@ async def list_entries(
             "reference_no",
             "description",
         ]
-        return csv_response(
-            "payment-entries.csv",
+        return export_response(
+            format,
+            "payment-entries",
             header,
             (
                 [
@@ -480,7 +520,7 @@ async def list_entries(
         )
     rows, total = await paginate(session, stmt, params)
     return Page(
-        items=[await _entry_out(session, r) for r in rows], total=total, page=params.page, page_size=params.page_size
+        items=await _entries_out(session, list(rows)), total=total, page=params.page, page_size=params.page_size
     )
 
 
