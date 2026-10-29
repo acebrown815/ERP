@@ -1,7 +1,7 @@
 """Cross-module reports. Reads other modules' facades only; owns no tables."""
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 
@@ -19,6 +19,7 @@ from app.modules.categories import api as categories
 from app.modules.payments import api as payments
 from app.modules.projects import api as projects
 from app.modules.rbac.api import Scope
+from app.modules.reporting.periods import bucketer, pct, recent_periods
 from app.modules.salary import api as salary
 from app.modules.settings import api as settings
 from app.modules.tasks import api as tasks
@@ -57,6 +58,8 @@ class ProjectFinancialsOut(BaseModel):
     tasks_overdue: int
     estimate_hours: Decimal
     logged_hours: Decimal
+    hours_used_pct: Decimal | None = None  # logged / estimated
+    revenue_per_hour: Decimal | None = None  # revenue / logged hours
 
 
 async def _financials(
@@ -106,6 +109,10 @@ async def _financials(
                 tasks_overdue=prog.overdue if prog else 0,
                 estimate_hours=prog.estimate_hours if prog else ZERO,
                 logged_hours=prog.logged_hours if prog else ZERO,
+                hours_used_pct=pct(prog.logged_hours, prog.estimate_hours) if prog else None,
+                revenue_per_hour=(led.income / prog.logged_hours).quantize(Decimal("0.01"))
+                if prog and prog.logged_hours > 0
+                else None,
             )
         )
     return out
@@ -160,6 +167,7 @@ async def project_profitability(
             "margin_pct",
             "completion_pct",
             "logged_hours",
+            "revenue_per_hour",
         ]
         return export_response(format, "project-profitability", fields, ([getattr(r, f) for f in fields] for r in out))
     return out
@@ -318,6 +326,13 @@ class MonthRow(BaseModel):
     salary_paid: Decimal
     profit: Decimal
     salary_calculated: Decimal
+    margin_pct: Decimal | None = None  # profit / income
+    fees: Decimal = ZERO  # payment fees the company paid (included in expenses)
+    fx_gain_loss: Decimal = ZERO  # realized (included in income); negative = loss
+    cash_in: Decimal = ZERO
+    cash_out: Decimal = ZERO
+    closing_cash: Decimal = ZERO  # money accounts as recorded, at the period end
+    in_progress: bool = False
 
 
 class MonthlySummaryOut(BaseModel):
@@ -334,16 +349,49 @@ async def monthly_summary(
     session: AsyncSession = Depends(get_session),
 ) -> Any:
     """Income, expenses, salary and profit per month, where a month is a salary period (Settings > Salary Cycle)."""
-    today = await settings.today(session)
-    started = [p for p in await salary.list_periods(session) if p.start_date <= today][:periods]
+    cols, today = await recent_periods(session, periods)
+    at = bucketer(cols)
+    n = len(cols)
+    first, last = cols[0].start_date, cols[-1].end_date
     bal = await salary.balances(session, None, until=today)
     calculated: dict[uuid.UUID, Decimal] = {}
     for b in bal.values():
         for line in b.lines:
             calculated[line.period.id] = calculated.get(line.period.id, ZERO) + line.calculated
+    sums = [{"income": ZERO, "expenses": ZERO, "salary": ZERO, "fees": ZERO, "fx": ZERO} for _ in cols]
+    for pl in await accounting.pl_by_day(session, first, last):
+        i = at(pl.day)
+        if i is None:
+            continue
+        acc = sums[i]
+        if pl.root_type == "income":
+            acc["income"] += pl.amount
+            if pl.system_key == "fx_gain_loss":
+                acc["fx"] += pl.amount
+        elif pl.system_key == "salary_expense":
+            acc["salary"] += pl.amount
+        else:
+            acc["expenses"] += pl.amount
+            if pl.system_key == "bank_fees":
+                acc["fees"] += pl.amount
+    cash_in, cash_out = [ZERO] * n, [ZERO] * n
+    # Totals per kind (income, expense, salary, equity, other) first, so a payment and its cancellation
+    # cancel out instead of counting once as money in and once as money out.
+    kinds: list[dict[str, Decimal]] = [{} for _ in cols]
+    for day, parts in await accounting.cash_flows(session, first, last):
+        i = at(day)
+        if i is not None:
+            for k, v in parts.items():
+                kinds[i][k] = kinds[i].get(k, ZERO) + v
+    for i, totals in enumerate(kinds):
+        cash_in[i] = sum((v for v in totals.values() if v > 0), ZERO)
+        cash_out[i] = -sum((v for v in totals.values() if v < 0), ZERO)
+    cash = await accounting.cash_balance(session, first - timedelta(days=1))
     rows = []
-    for p in reversed(started):
-        t = await accounting.period_totals(session, p.start_date, p.end_date)
+    for i, p in enumerate(cols):
+        acc = sums[i]
+        profit = acc["income"] - acc["expenses"] - acc["salary"]
+        cash += cash_in[i] - cash_out[i]
         rows.append(
             MonthRow(
                 period_id=p.id,
@@ -351,11 +399,18 @@ async def monthly_summary(
                 start_date=p.start_date,
                 end_date=p.end_date,
                 status=p.status,
-                income=t.income,
-                expenses=t.expenses,
-                salary_paid=t.salary,
-                profit=t.profit,
+                income=acc["income"],
+                expenses=acc["expenses"],
+                salary_paid=acc["salary"],
+                profit=profit,
                 salary_calculated=calculated.get(p.id, ZERO),
+                margin_pct=pct(profit, acc["income"]) if acc["income"] > 0 else None,
+                fees=acc["fees"],
+                fx_gain_loss=acc["fx"],
+                cash_in=cash_in[i],
+                cash_out=cash_out[i],
+                closing_cash=cash,
+                in_progress=p.in_progress,
             )
         )
     await session.commit()
@@ -372,14 +427,48 @@ async def monthly_summary(
             salary_paid=sum((r.salary_paid for r in rows), ZERO),
             profit=sum((r.profit for r in rows), ZERO),
             salary_calculated=sum((r.salary_calculated for r in rows), ZERO),
+            fees=sum((r.fees for r in rows), ZERO),
+            fx_gain_loss=sum((r.fx_gain_loss for r in rows), ZERO),
+            cash_in=sum((r.cash_in for r in rows), ZERO),
+            cash_out=sum((r.cash_out for r in rows), ZERO),
+            closing_cash=rows[-1].closing_cash,
         )
+        totals.margin_pct = pct(totals.profit, totals.income) if totals.income > 0 else None
     if format != "json":
         return export_response(
             format,
             "monthly-summary",
-            ["month", "from", "to", "income", "expenses", "salary paid", "profit", "salary calculated"],
             [
-                [r.label, r.start_date, r.end_date, r.income, r.expenses, r.salary_paid, r.profit, r.salary_calculated]
+                "month",
+                "from",
+                "to",
+                "income",
+                "expenses",
+                "salary paid",
+                "profit",
+                "margin %",
+                "salary calculated",
+                "fees",
+                "cash in",
+                "cash out",
+                "closing cash",
+            ],
+            [
+                [
+                    r.label,
+                    r.start_date,
+                    r.end_date,
+                    r.income,
+                    r.expenses,
+                    r.salary_paid,
+                    r.profit,
+                    r.margin_pct,
+                    r.salary_calculated,
+                    r.fees,
+                    r.cash_in,
+                    r.cash_out,
+                    r.closing_cash,
+                ]
                 for r in [*rows, *([totals] if totals else [])]
             ],
             title="Monthly summary (salary periods)",

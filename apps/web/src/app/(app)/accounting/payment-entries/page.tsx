@@ -31,7 +31,8 @@ type Totals = { count: number; received: string; paid: string; transferred: stri
 const EMPTY = { q: "", status: "submitted", direction: "", from: "", to: "", party_id: "", employee_id: "", payment_account_id: "" };
 
 function PaymentEntriesList() {
-  // ?employee_id=… or ?payment_account_id=… opens the list already filtered (links from employee and account pages).
+  // ?employee_id=, ?party_id=, ?payment_account_id=, ?direction=, ?from=, ?to= open the list already filtered
+  // (links from employee, party and account pages, and from report figures).
   const params = useSearchParams();
   const router = useRouter();
   const can = useCan();
@@ -39,6 +40,10 @@ function PaymentEntriesList() {
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState({
     ...EMPTY,
+    status: params.get("status") ?? EMPTY.status,
+    direction: params.get("direction") ?? "",
+    from: params.get("from") ?? "",
+    to: params.get("to") ?? "",
     party_id: params.get("party_id") ?? "",
     employee_id: params.get("employee_id") ?? "",
     payment_account_id: params.get("payment_account_id") ?? "",

@@ -28,13 +28,16 @@ How to set up and run the ERP day to day. For servers, backups and monitoring se
 4. After the month ends, **close the salary period**. Its figures freeze, and receipts or employee expenses dated in it can no longer be submitted or cancelled. Only an Administrator can reopen it (with a reason; audited).
 5. **Close the accounting month** (Settings → Accounting Periods) once the books are checked.
 6. Review **Reports**:
-   - Monthly Summary.
-   - Income & Expenses by Category.
-   - Customer & Supplier Payments.
-   - Project Financials.
-   - Employee Salary Report.
+   - **Monthly Summary**: income, costs, profit and margin per month with a chart, change against the previous month, year to date, and cash in, out and held.
+   - **Cash Flow & Runway**: income received, expenses and salary paid, and owner capital and drawings per month (transfers between your own accounts left out), cash held at each month end (in total and per currency), fees by account, and how many months the cash lasts at the recent pace. Needs opening balances to be right.
+   - **Customer Analysis**: revenue per customer per month, how much depends on the biggest customers, and customers who have gone quiet (no payment for 60+ days).
+   - **Income & Expense Trends**: per category and per supplier or customer, month by month, with the biggest changes between the last two full months.
+   - **Employee Performance**: per person, revenue brought in (net of their tagged expenses), salary earned, what is left for the company, salary as a % of revenue, and revenue per hour logged.
+   - **Income & Expenses by Category** and **Customer & Supplier Payments**: any date range, compared with the previous period.
+   - **Project Financials**: profit per project with a chart, hours against estimate and revenue per hour; each project's Financials tab shows it month by month against its budget.
+   - **Employee Salary Report**.
 
-   Every report exports to CSV, Excel or PDF.
+   Months are salary periods. Amounts in tables open Payment Entries filtered to the payments behind them. Every report exports to CSV, Excel or PDF.
 
 ## 4. Checks and safety nets
 

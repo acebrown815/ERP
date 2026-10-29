@@ -5,7 +5,9 @@ import { AlertTriangle, ArrowRight, CalendarDays, ChevronDown, ChevronRight, Dia
 import Link from "next/link";
 import { Fragment, useState } from "react";
 
+import { num, PeriodChart, SERIES } from "@/components/charts/charts";
 import { PageHeader } from "@/components/erp/page-header";
+import { shortLabel } from "@/components/reports/shared";
 import { StatusBadge } from "@/components/payments/entry-view";
 import { Button } from "@/components/ui/button";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
@@ -16,7 +18,7 @@ import { currencyPrecision, useCompany, useCurrencies } from "@/lib/queries";
 import { useMe } from "@/lib/session";
 import { addDays, fmtDay, fmtTime, iso } from "@/components/calendar/utils";
 import { isOverdue } from "@/components/projects/shared";
-import type { CalendarFeed, CompanyDashboard, Holdings, Page, PaymentEntry, Task } from "@/lib/types";
+import type { CalendarFeed, CashFlow, CompanyDashboard, Holdings, MonthlySummary, Page, PaymentEntry, Task } from "@/lib/types";
 import { cn, formatDate } from "@/lib/utils";
 
 
@@ -47,6 +49,14 @@ function FinanceOverview() {
   const recent = useQuery({ queryKey: ["payment-entries", "recent"], queryFn: () => api.get<Page<PaymentEntry>>("/payment-entries", { page_size: 6 }) });
   const h = holdings.data;
   const fx = h ? subtract(h.market_total, h.book_total) : "0";
+  const monthly = useQuery({ queryKey: ["report-monthly", 12], queryFn: () => api.get<MonthlySummary>("/reports/monthly-summary", { periods: 12 }) });
+  const cash = useQuery({ queryKey: ["report-cash-flow", 4], queryFn: () => api.get<CashFlow>("/reports/cash-flow", { periods: 4 }) });
+  // Last full month, to read this month's (partial) figures against.
+  const prev = monthly.data?.rows.filter((m) => !m.in_progress).at(-1);
+  const run = cash.data?.runway;
+  const runway = run && sign(run.cash_now) > 0
+    ? run.months_net ? `Runway about ${run.months_net} months at the recent pace` : sign(run.net_burn) <= 0 && run.basis_periods ? "Cash has been growing" : undefined
+    : undefined;
   return (
     <>
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -54,12 +64,41 @@ function FinanceOverview() {
           label="Cash, bank & wallets"
           value={h?.market_total}
           base={base}
-          hint={h && sign(fx) ? `At today's rates · ${formatAmount(h.book_total)} as recorded` : "At today's rates"}
+          hint={[h && sign(fx) ? `At today's rates · ${formatAmount(h.book_total)} as recorded` : "At today's rates", runway].filter(Boolean).join(" · ")}
         />
-        <Kpi label="Income this month" value={d?.income} base={base} hint={span} />
-        <Kpi label="Expenses this month" value={d && sum([d.expenses, d.salary_paid])} base={base} hint={d ? `incl. ${formatAmount(d.salary_paid)} salary paid` : undefined} />
-        <Kpi label="Net profit this month" value={d?.profit} base={base} tone={d && sign(d.profit) < 0 ? "bad" : "good"} hint={span} />
+        <Kpi label="Income this month" value={d?.income} base={base} hint={[span, prev && `${prev.label}: ${formatAmount(prev.income)}`].filter(Boolean).join(" · ")} />
+        <Kpi
+          label="Expenses this month"
+          value={d && sum([d.expenses, d.salary_paid])}
+          base={base}
+          hint={[d && `incl. ${formatAmount(d.salary_paid)} salary paid`, prev && `${prev.label}: ${formatAmount(sum([prev.expenses, prev.salary_paid]))}`].filter(Boolean).join(" · ")}
+        />
+        <Kpi
+          label="Net profit this month"
+          value={d?.profit}
+          base={base}
+          tone={d && sign(d.profit) < 0 ? "bad" : "good"}
+          hint={[span, prev && `${prev.label}: ${formatAmount(prev.profit)}`].filter(Boolean).join(" · ")}
+        />
       </div>
+      {monthly.data && monthly.data.rows.some((m) => sign(m.income) || sign(m.expenses) || sign(m.salary_paid)) && (
+        <Card className="mb-6">
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle>Last 12 months</CardTitle>
+            <Button variant="ghost" size="sm" asChild><Link href="/reports/monthly">Monthly summary <ArrowRight /></Link></Button>
+          </CardHeader>
+          <CardContent>
+            <PeriodChart
+              label="Income, costs and profit over the last 12 months"
+              height={220}
+              unit={base}
+              data={monthly.data.rows.map((m) => ({ label: shortLabel(m.label), income: num(m.income), costs: num(m.expenses) + num(m.salary_paid), profit: num(m.profit) }))}
+              bars={[{ key: "income", label: "Income", color: SERIES[0] }, { key: "costs", label: "Expenses + salary", color: SERIES[1] }]}
+              line={{ key: "profit", label: "Profit", color: SERIES[3] }}
+            />
+          </CardContent>
+        </Card>
+      )}
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi label="Salary owed" value={d?.salary_owed} base={base} hint="Earned by employees, not paid yet" />
         <Kpi label="Salary this month" value={d?.salary_projected} base={base} hint="Projected from revenue so far" />

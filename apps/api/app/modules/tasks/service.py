@@ -124,6 +124,16 @@ async def hours_logged(session: AsyncSession, task_ids: list[uuid.UUID]) -> dict
     return dict(rows.all())  # type: ignore[arg-type]
 
 
+async def hours_by_employee(session: AsyncSession, *, date_from: date, date_to: date) -> dict[uuid.UUID, Decimal]:
+    """Hours logged per employee on work dates in the range (all tasks)."""
+    rows = await session.execute(
+        select(TimeEntry.employee_id, func.sum(TimeEntry.hours))
+        .where(TimeEntry.work_date.between(date_from, date_to))
+        .group_by(TimeEntry.employee_id)
+    )
+    return dict(rows.all())  # type: ignore[arg-type]
+
+
 async def subtask_counts(session: AsyncSession, task_ids: list[uuid.UUID]) -> dict[uuid.UUID, tuple[int, int]]:
     """(subtasks, done subtasks) per parent."""
     if not task_ids:

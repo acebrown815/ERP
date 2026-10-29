@@ -4,14 +4,16 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
 
-import { DateRange, yearRange, type Range } from "@/components/accounting/report-controls";
+import { DateRange, usePreviousRange, yearRange, type Range } from "@/components/accounting/report-controls";
 import { ExportMenu } from "@/components/erp/export-menu";
 import { PageHeader } from "@/components/erp/page-header";
 import { EmptyState, ErrorState, TableSkeleton } from "@/components/erp/states";
-import { Card, CardContent } from "@/components/ui/misc";
+import { ChangeText, DrillAmount } from "@/components/reports/shared";
+import { Checkbox } from "@/components/ui/input";
+import { Card, CardContent, Label } from "@/components/ui/misc";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { api } from "@/lib/api";
-import { formatAmount } from "@/lib/money";
+import { formatAmount, subtract } from "@/lib/money";
 import type { PartyReport } from "@/lib/types";
 import { cn, formatDate } from "@/lib/utils";
 
@@ -24,6 +26,16 @@ export default function PartyPaymentsPage() {
     placeholderData: keepPreviousData,
   });
   const r = q.data;
+  const [compare, setCompare] = useState(true);
+  const prev = usePreviousRange(range);
+  const pq = useQuery({
+    queryKey: ["report-party-payments", direction, { from: prev.from, to: prev.to }],
+    queryFn: () => api.get<PartyReport>("/reports/party-payments", { direction, from: prev.from, to: prev.to }),
+    enabled: compare,
+  });
+  const before = new Map((pq.data?.rows ?? []).map((x) => [x.party_id ?? "", x.total]));
+  const showPrev = compare && !!pq.data;
+  const change = (now: string, then: string | undefined) => subtract(now, then ?? "0");
   return (
     <>
       <PageHeader
@@ -42,6 +54,10 @@ export default function PartyPaymentsPage() {
             ))}
           </div>
           <DateRange {...range} onChange={setRange} />
+          <div className="flex items-center gap-2">
+            <Checkbox id="cmp" checked={compare} onChange={(e) => setCompare(e.target.checked)} />
+            <Label htmlFor="cmp" className="font-normal">Compare with {prev.label}</Label>
+          </div>
         </CardContent>
       </Card>
       <Card>
@@ -49,7 +65,7 @@ export default function PartyPaymentsPage() {
           <EmptyState title="No payments in this range" />
         ) : (
           <Table>
-            <THead><TR><TH>Party</TH><TH className="text-right">Payments</TH><TH className="text-right">Last</TH><TH className="w-1/4">Share</TH><TH className="text-right">Total ({r.base_currency})</TH></TR></THead>
+            <THead><TR><TH>Party</TH><TH className="text-right">Payments</TH><TH className="text-right">Last</TH><TH className="w-1/4">Share</TH><TH className="text-right">Total ({r.base_currency})</TH>{showPrev && <><TH className="text-right">{prev.label}</TH><TH className="text-right">Change</TH></>}</TR></THead>
             <TBody>
               {r.rows.map((row, i) => (
                 <TR key={row.party_id ?? i}>
@@ -62,10 +78,18 @@ export default function PartyPaymentsPage() {
                       <span className="tabular w-12 text-right text-xs text-muted-foreground">{row.share_pct}%</span>
                     </div>
                   </TD>
-                  <TD className="tabular text-right">{formatAmount(row.total)}</TD>
+                  <TD className="tabular text-right">
+                    <DrillAmount value={row.total} drill={{ party_id: row.party_id, direction, from: range.from, to: range.to }} />
+                  </TD>
+                  {showPrev && (
+                    <>
+                      <TD className="tabular text-right text-muted-foreground">{formatAmount(before.get(row.party_id ?? "") ?? "0")}</TD>
+                      <TD className="whitespace-nowrap text-right"><ChangeText value={change(row.total, before.get(row.party_id ?? ""))} goodWhenUp={direction === "receive"} /></TD>
+                    </>
+                  )}
                 </TR>
               ))}
-              <TR className="font-medium"><TD>Total</TD><TD className="tabular text-right">{r.rows.reduce((n, x) => n + x.payments, 0)}</TD><TD /><TD /><TD className="tabular text-right">{formatAmount(r.total)}</TD></TR>
+              <TR className="font-medium"><TD>Total</TD><TD className="tabular text-right">{r.rows.reduce((n, x) => n + x.payments, 0)}</TD><TD /><TD /><TD className="tabular text-right">{formatAmount(r.total)}</TD>{showPrev && <><TD className="tabular text-right">{formatAmount(pq.data!.total)}</TD><TD className="whitespace-nowrap text-right"><ChangeText value={change(r.total, pq.data!.total)} goodWhenUp={direction === "receive"} /></TD></>}</TR>
             </TBody>
           </Table>
         )}

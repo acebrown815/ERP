@@ -73,3 +73,30 @@ function PeriodButtons({ onChange }: { onChange: (r: Range) => void }) {
     </>
   );
 }
+
+const shiftDays = (iso: string, days: number) => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+
+/**
+ * The range to compare with: the previous salary period when a period is chosen, the previous year for a
+ * whole year, otherwise the same number of days just before.
+ */
+export function usePreviousRange(r: Range): Range & { label: string } {
+  const periods = useSalaryPeriods().data ?? []; // newest first
+  const i = periods.findIndex((p) => p.start_date === r.from && p.end_date === r.to);
+  if (i >= 0 && periods[i + 1]) {
+    const p = periods[i + 1]!;
+    return { from: p.start_date, to: p.end_date, label: p.label };
+  }
+  const y = r.from.slice(0, 4);
+  if (r.from === `${y}-01-01` && r.to === `${y}-12-31`) {
+    const prev = String(Number(y) - 1);
+    return { from: `${prev}-01-01`, to: `${prev}-12-31`, label: prev };
+  }
+  const days = Math.round((Date.parse(r.to) - Date.parse(r.from)) / 86_400_000) + 1;
+  const prev = { from: shiftDays(r.from, -days), to: shiftDays(r.from, -1) };
+  return { ...prev, label: rangeText(prev) };
+}

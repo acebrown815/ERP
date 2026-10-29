@@ -34,6 +34,7 @@ from app.modules.projects import setup as projects_setup
 from app.modules.projects.router import milestones_router
 from app.modules.projects.router import router as projects_router
 from app.modules.rbac.router import router as rbac_router
+from app.modules.reporting.analytics import router as analytics_router
 from app.modules.reporting.router import router as reporting_router
 from app.modules.salary import setup as salary_setup
 from app.modules.salary.router import router as salary_router
@@ -89,6 +90,7 @@ ROUTERS = (
     salary_router,
     tasks_router,
     reporting_router,
+    analytics_router,
     calendar_router,
     system_router,
 )

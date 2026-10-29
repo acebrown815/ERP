@@ -25,6 +25,13 @@
   --sidebar-muted: oklch(0.62 0.02 257);
   --sidebar-active: oklch(0.29 0.04 262);
   --sidebar-border: oklch(0.27 0.03 262);
+  /* Charts: categorical slots in fixed order (validated for colour-blind separation), plus chrome. */
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
+  --chart-3: #1baf7a;
+  --chart-4: #eda100;
+  --chart-grid: #e1e0d9;
+  --chart-axis: #898781;
 }
 
 .dark {
@@ -49,6 +56,12 @@
   --sidebar-muted: oklch(0.6 0.02 257);
   --sidebar-active: oklch(0.22 0.03 262);
   --sidebar-border: oklch(0.22 0.02 262);
+  --chart-1: #3987e5;
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-4: #c98500;
+  --chart-grid: #2c2c2a;
+  --chart-axis: #898781;
 }
 
 @theme inline {
@@ -74,6 +87,10 @@
   --color-sidebar-muted: var(--sidebar-muted);
   --color-sidebar-active: var(--sidebar-active);
   --color-sidebar-border: var(--sidebar-border);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
   --radius-md: 0.5rem;

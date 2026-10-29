@@ -1661,6 +1661,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/reports/employee-performance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Performance Report
+         * @description Per employee: revenue brought in, expenses tagged to them, salary earned, and what is left for the company.
+         */
+        get: operations["performance_report_api_v1_reports_employee_performance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks": {
         parameters: {
             query?: never;
@@ -1968,6 +1988,87 @@ export interface paths {
          * @description Company at a glance. "This month" is the current salary period.
          */
         get: operations["company_dashboard_api_v1_dashboard_company_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/cash-flow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cash Flow
+         * @description Money in and out per period by source (income, expenses, salary, owner), cash held at each period end
+         *     (in total and per currency), fees, and runway.
+         */
+        get: operations["cash_flow_api_v1_reports_cash_flow_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/customers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Customer Analysis
+         * @description Received payments per customer per period, concentration, new and lapsing customers.
+         */
+        get: operations["customer_analysis_api_v1_reports_customers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/trends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Trends
+         * @description Income or expenses per account / category and per party, per period, with the latest change.
+         */
+        get: operations["trends_api_v1_reports_trends_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/financials/trend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Project Trend
+         * @description Revenue, costs and profit per period for one project, with running totals against budget and contract.
+         */
+        get: operations["project_trend_api_v1_projects__project_id__financials_trend_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2665,6 +2766,49 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** CashFlowOut */
+        CashFlowOut: {
+            /** Base Currency */
+            base_currency: string;
+            /** Periods */
+            periods: components["schemas"]["PeriodCol"][];
+            /** Rows */
+            rows: components["schemas"]["CashRow"][];
+            /** Currencies */
+            currencies: components["schemas"]["CurrencyRow"][];
+            /** Fees By Account */
+            fees_by_account: components["schemas"]["FeeRow"][];
+            runway: components["schemas"]["Runway"];
+        };
+        /**
+         * CashRow
+         * @description Where money came from and went, by what was on the other side of each payment. Transfers between our
+         *     own accounts cancel out; their fees count as expenses and exchange differences as income.
+         */
+        CashRow: {
+            /** Income */
+            income: string;
+            /** Expenses */
+            expenses: string;
+            /** Salary */
+            salary: string;
+            /** Owner In */
+            owner_in: string;
+            /** Owner Out */
+            owner_out: string;
+            /** Other */
+            other: string;
+            /** Net */
+            net: string;
+            /** Closing Book */
+            closing_book: string;
+            /** Closing Market */
+            closing_market: string;
+            /** Fees */
+            fees: string;
+            /** Fx Gain Loss */
+            fx_gain_loss: string;
+        };
         /** CategoryCreateIn */
         CategoryCreateIn: {
             /** Group Key */
@@ -2926,6 +3070,15 @@ export interface components {
                 [key: string]: string;
             } | null;
         };
+        /** Concentration */
+        Concentration: {
+            /** Top1 Pct */
+            top1_pct: string | null;
+            /** Top3 Pct */
+            top3_pct: string | null;
+            /** Top5 Pct */
+            top5_pct: string | null;
+        };
         /** CurrencyCreateIn */
         CurrencyCreateIn: {
             /** Code */
@@ -2974,6 +3127,17 @@ export interface components {
             /** Is Active */
             is_active: boolean;
         };
+        /** CurrencyRow */
+        CurrencyRow: {
+            /** Currency */
+            currency: string;
+            /** Units */
+            units: string[];
+            /** Values */
+            values: string[];
+            /** Share Pct */
+            share_pct: string | null;
+        };
         /** CurrencyUpdateIn */
         CurrencyUpdateIn: {
             /** Name */
@@ -2991,6 +3155,59 @@ export interface components {
             revenue: string;
             /** Rate */
             rate: string;
+        };
+        /** CustomerPeriod */
+        CustomerPeriod: {
+            /** Revenue */
+            revenue: string;
+            /** Paying Customers */
+            paying_customers: number;
+            /** New Customers */
+            new_customers: number;
+        };
+        /** CustomerRow */
+        CustomerRow: {
+            /**
+             * Party Id
+             * Format: uuid
+             */
+            party_id: string;
+            /** Party Name */
+            party_name: string;
+            /** By Period */
+            by_period: string[];
+            /** Total */
+            total: string;
+            /** Payments */
+            payments: number;
+            /** Share Pct */
+            share_pct: string | null;
+            /** First Payment */
+            first_payment: string | null;
+            /** Last Payment */
+            last_payment: string | null;
+            /** Days Since Last */
+            days_since_last: number | null;
+            /** Status */
+            status: string;
+        };
+        /** CustomersOut */
+        CustomersOut: {
+            /** Base Currency */
+            base_currency: string;
+            /** Periods */
+            periods: components["schemas"]["PeriodCol"][];
+            /** By Period */
+            by_period: components["schemas"]["CustomerPeriod"][];
+            /** Rows */
+            rows: components["schemas"]["CustomerRow"][];
+            /** Total */
+            total: string;
+            concentration: components["schemas"]["Concentration"];
+            /** Lapsing Days */
+            lapsing_days: number;
+            /** Lapsed Days */
+            lapsed_days: number;
         };
         /** CycleIn */
         CycleIn: {
@@ -3697,6 +3914,19 @@ export interface components {
             /** Attendee Ids */
             attendee_ids?: string[] | null;
         };
+        /** FeeRow */
+        FeeRow: {
+            /** Account Name */
+            account_name: string;
+            /** Currency */
+            currency: string;
+            /** Paid By */
+            paid_by: string;
+            /** Payments */
+            payments: number;
+            /** Amount */
+            amount: string;
+        };
         /** FeedItem */
         FeedItem: {
             /** Key */
@@ -4388,6 +4618,38 @@ export interface components {
             profit: string;
             /** Salary Calculated */
             salary_calculated: string;
+            /** Margin Pct */
+            margin_pct?: string | null;
+            /**
+             * Fees
+             * @default 0
+             */
+            fees: string;
+            /**
+             * Fx Gain Loss
+             * @default 0
+             */
+            fx_gain_loss: string;
+            /**
+             * Cash In
+             * @default 0
+             */
+            cash_in: string;
+            /**
+             * Cash Out
+             * @default 0
+             */
+            cash_out: string;
+            /**
+             * Closing Cash
+             * @default 0
+             */
+            closing_cash: string;
+            /**
+             * In Progress
+             * @default false
+             */
+            in_progress: boolean;
         };
         /** MonthlySummaryOut */
         MonthlySummaryOut: {
@@ -4864,10 +5126,74 @@ export interface components {
             /** Allocated Total */
             allocated_total?: string | null;
         };
+        /** PerformanceOut */
+        PerformanceOut: {
+            /** Periods */
+            periods: components["schemas"]["ReportPeriod"][];
+            /** Rows */
+            rows: components["schemas"]["PerformanceRow"][];
+            totals: components["schemas"]["PerformanceRow"] | null;
+        };
+        /** PerformanceRow */
+        PerformanceRow: {
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /** Employee Name */
+            employee_name: string;
+            /** Gross Revenue */
+            gross_revenue: string;
+            /** Expenses */
+            expenses: string;
+            /** Net Revenue */
+            net_revenue: string;
+            /** Salary */
+            salary: string;
+            /** Contribution */
+            contribution: string;
+            /** Salary Pct */
+            salary_pct: string | null;
+            /** Hours */
+            hours: string;
+            /** Revenue Per Hour */
+            revenue_per_hour: string | null;
+            /** Contribution By Period */
+            contribution_by_period: string[];
+            /** Net Revenue By Period */
+            net_revenue_by_period: string[];
+            /** Salary By Period */
+            salary_by_period: string[];
+        };
         /** PeriodActionIn */
         PeriodActionIn: {
             /** Reason */
             reason?: string | null;
+        };
+        /** PeriodCol */
+        PeriodCol: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /**
+             * End Date
+             * Format: date
+             */
+            end_date: string;
+            /** Status */
+            status: string;
+            /** In Progress */
+            in_progress: boolean;
         };
         /** PeriodOut */
         PeriodOut: {
@@ -5045,6 +5371,10 @@ export interface components {
             estimate_hours: string;
             /** Logged Hours */
             logged_hours: string;
+            /** Hours Used Pct */
+            hours_used_pct?: string | null;
+            /** Revenue Per Hour */
+            revenue_per_hour?: string | null;
         };
         /** ProjectOut */
         ProjectOut: {
@@ -5109,6 +5439,33 @@ export interface components {
             revenue: string;
             /** Payments */
             payments: number;
+        };
+        /** ProjectTrendOut */
+        ProjectTrendOut: {
+            /** Base Currency */
+            base_currency: string;
+            /** Budget */
+            budget: string | null;
+            /** Contract Value */
+            contract_value: string | null;
+            /** Periods */
+            periods: components["schemas"]["PeriodCol"][];
+            /** Rows */
+            rows: components["schemas"]["ProjectTrendRow"][];
+            before: components["schemas"]["ProjectTrendRow"];
+        };
+        /** ProjectTrendRow */
+        ProjectTrendRow: {
+            /** Revenue */
+            revenue: string;
+            /** Costs */
+            costs: string;
+            /** Profit */
+            profit: string;
+            /** Cumulative Revenue */
+            cumulative_revenue: string;
+            /** Cumulative Costs */
+            cumulative_costs: string;
         };
         /** ProjectUpdateIn */
         ProjectUpdateIn: {
@@ -5433,6 +5790,23 @@ export interface components {
             min_revenue: string;
             /** Amount */
             amount: string;
+        };
+        /** Runway */
+        Runway: {
+            /** Cash Now */
+            cash_now: string;
+            /** Avg In */
+            avg_in: string;
+            /** Avg Out */
+            avg_out: string;
+            /** Net Burn */
+            net_burn: string;
+            /** Months Net */
+            months_net: string | null;
+            /** Months If No Income */
+            months_if_no_income: string | null;
+            /** Basis Periods */
+            basis_periods: number;
         };
         /** SalaryComponent */
         SalaryComponent: {
@@ -6048,6 +6422,50 @@ export interface components {
             delayed: boolean;
             /** Version */
             version: number;
+        };
+        /** TrendRow */
+        TrendRow: {
+            /** Key */
+            key: string;
+            /** Account Id */
+            account_id?: string | null;
+            /** Account Code */
+            account_code?: string | null;
+            /** Account Name */
+            account_name?: string | null;
+            /** Category Id */
+            category_id?: string | null;
+            /** Category Name */
+            category_name?: string | null;
+            /** Party Id */
+            party_id?: string | null;
+            /** Party Name */
+            party_name?: string | null;
+            /** By Period */
+            by_period: string[];
+            /** Total */
+            total: string;
+            /** Change */
+            change: string | null;
+            /** Change Pct */
+            change_pct: string | null;
+        };
+        /** TrendsOut */
+        TrendsOut: {
+            /** Kind */
+            kind: string;
+            /** Base Currency */
+            base_currency: string;
+            /** Periods */
+            periods: components["schemas"]["PeriodCol"][];
+            /** Compare */
+            compare: number[];
+            /** Categories */
+            categories: components["schemas"]["TrendRow"][];
+            /** Parties */
+            parties: components["schemas"]["TrendRow"][];
+            /** Totals */
+            totals: string[];
         };
         /** TrialBalanceOut */
         TrialBalanceOut: {
@@ -10242,6 +10660,39 @@ export interface operations {
             };
         };
     };
+    performance_report_api_v1_reports_employee_performance_get: {
+        parameters: {
+            query?: {
+                from_period_id?: string | null;
+                to_period_id?: string | null;
+                format?: "json" | "csv" | "xlsx" | "pdf";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PerformanceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_tasks_api_v1_tasks_get: {
         parameters: {
             query?: {
@@ -10947,6 +11398,136 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DashboardOut"];
+                };
+            };
+        };
+    };
+    cash_flow_api_v1_reports_cash_flow_get: {
+        parameters: {
+            query?: {
+                periods?: number;
+                format?: "json" | "csv" | "xlsx" | "pdf";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashFlowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    customer_analysis_api_v1_reports_customers_get: {
+        parameters: {
+            query?: {
+                periods?: number;
+                format?: "json" | "csv" | "xlsx" | "pdf";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomersOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trends_api_v1_reports_trends_get: {
+        parameters: {
+            query?: {
+                kind?: "income" | "expense";
+                periods?: number;
+                format?: "json" | "csv" | "xlsx" | "pdf";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrendsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    project_trend_api_v1_projects__project_id__financials_trend_get: {
+        parameters: {
+            query?: {
+                periods?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectTrendOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

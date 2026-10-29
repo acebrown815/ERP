@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import exists, func, select, update
+from sqlalchemy import case, exists, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from app.core.numbering import next_number
 from app.modules.accounting.chart import CATEGORY_DEFAULTS, DEFAULT_CHART
 from app.modules.accounting.models import (
     ACCOUNT_TYPES,
+    MONEY_ACCOUNT_TYPES,
     Account,
     AccountingPeriod,
     JournalEntry,
@@ -789,4 +790,111 @@ async def period_totals(session: AsyncSession, date_from: date, date_to: date) -
             out.salary += (d or ZERO) - (c or ZERO)
         else:
             out.expenses += (d or ZERO) - (c or ZERO)
+    return out
+
+
+# ---- analysis: daily rows that reports bucket into salary periods ----------------------------------
+
+
+@dataclass
+class PLDay:
+    """Income or expense posted on one day to one account / category / project, in the natural direction."""
+
+    day: date
+    root_type: str
+    system_key: str | None
+    account_id: uuid.UUID
+    code: str
+    name: str
+    category_id: uuid.UUID | None
+    project_id: uuid.UUID | None
+    amount: Decimal  # income: credit - debit; expense: debit - credit
+
+
+async def pl_by_day(
+    session: AsyncSession, date_from: date, date_to: date, *, project_ids: list[uuid.UUID] | None = None
+) -> list[PLDay]:
+    stmt = (
+        select(
+            JournalEntry.posting_date,
+            Account.root_type,
+            Account.system_key,
+            Account.id,
+            Account.code,
+            Account.name,
+            JournalLine.category_id,
+            JournalLine.project_id,
+            func.sum(JournalLine.debit_base),
+            func.sum(JournalLine.credit_base),
+        )
+        .join(Account, Account.id == JournalLine.account_id)
+        .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
+        .where(Account.root_type.in_(("income", "expense")), JournalEntry.posting_date.between(date_from, date_to))
+        .group_by(
+            JournalEntry.posting_date,
+            Account.root_type,
+            Account.system_key,
+            Account.id,
+            Account.code,
+            Account.name,
+            JournalLine.category_id,
+            JournalLine.project_id,
+        )
+    )
+    if project_ids is not None:
+        stmt = stmt.where(JournalLine.project_id.in_(project_ids))
+    out = []
+    for day, root, key, aid, code, name, cat, proj, d, c in (await session.execute(stmt)).all():
+        amount = (c or ZERO) - (d or ZERO) if root == "income" else (d or ZERO) - (c or ZERO)
+        if amount:
+            out.append(PLDay(day, root, key, aid, code, name, cat, proj, amount))
+    return out
+
+
+async def cash_balance(session: AsyncSession, on: date) -> Decimal:
+    """Book value (as recorded, base currency) of all money accounts at the end of `on`."""
+    value = await session.scalar(
+        select(func.sum(JournalLine.debit_base - JournalLine.credit_base))
+        .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
+        .join(Account, Account.id == JournalLine.account_id)
+        .where(Account.account_type.in_(MONEY_ACCOUNT_TYPES), JournalEntry.posting_date <= on)
+    )
+    return value or ZERO
+
+
+CASH_FLOW_KINDS = ("income", "expense", "salary", "equity", "other")
+
+
+async def cash_flows(session: AsyncSession, date_from: date, date_to: date) -> list[tuple[date, dict[str, Decimal]]]:
+    """Money moved per journal entry, split by what was on the other side, base currency.
+
+    For each entry that touches a money account (bank, cash, wallet, card), the other lines say where the
+    money came from or went: income, expense (salary separately), equity (owner capital and drawings) or
+    other (loans, other assets). Signed as money in = positive, so the parts add up to the change in money
+    accounts. A transfer between our own accounts cancels out, apart from any fee or exchange difference."""
+    is_money = Account.account_type.in_(MONEY_ACCOUNT_TYPES)
+    kind = case(
+        (is_money, "money"),
+        (Account.system_key == "salary_expense", "salary"),
+        (Account.root_type.in_(("income", "expense", "equity")), Account.root_type),
+        else_="other",
+    )
+    stmt = (
+        select(
+            JournalEntry.id, JournalEntry.posting_date, kind, func.sum(JournalLine.debit_base - JournalLine.credit_base)
+        )
+        .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
+        .join(Account, Account.id == JournalLine.account_id)
+        .where(JournalEntry.posting_date.between(date_from, date_to))
+        .group_by(JournalEntry.id, JournalEntry.posting_date, kind)
+    )
+    entries: dict[uuid.UUID, tuple[date, dict[str, Decimal]]] = {}
+    for entry_id, day, k, net in (await session.execute(stmt)).all():
+        entries.setdefault(entry_id, (day, {}))[1][k] = net or ZERO
+    out = []
+    for day, parts in entries.values():
+        if "money" not in parts:
+            continue  # no money moved (accruals, reclassifications)
+        # The counter lines' debit-minus-credit, negated, is the money that came in through them.
+        out.append((day, {k: -parts.get(k, ZERO) for k in CASH_FLOW_KINDS}))
     return out

@@ -2,11 +2,13 @@
 
 import { useQuery } from "@tanstack/react-query";
 
+import { num, PeriodChart, SERIES, TrendChart } from "@/components/charts/charts";
 import { ErrorState, TableSkeleton } from "@/components/erp/states";
+import { shortLabel } from "@/components/reports/shared";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/misc";
 import { api } from "@/lib/api";
 import { formatAmount, sign } from "@/lib/money";
-import type { ProjectFinancials } from "@/lib/types";
+import type { ProjectFinancials, ProjectTrend } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 import { ProgressBar } from "./shared";
@@ -21,6 +23,59 @@ function Row({ label, value, hint, strong, negative }: { label: string; value: s
       <span className={cn("tabular", negative && sign(value) > 0 && "text-muted-foreground", value && sign(value) < 0 && strong && "text-destructive")}>
         {value == null ? "—" : `${negative && sign(value) > 0 ? "−" : ""}${formatAmount(value)}`}
       </span>
+    </div>
+  );
+}
+
+/** Month by month (salary periods): revenue and costs, and running totals against budget. */
+function ProjectTrendView({ projectId }: { projectId: string }) {
+  const q = useQuery({ queryKey: ["project-trend", projectId], queryFn: () => api.get<ProjectTrend>(`/projects/${projectId}/financials/trend`, { periods: 12 }) });
+  const t = q.data;
+  if (!t) return null;
+  const earlier = num(t.before.cumulative_revenue) !== 0 || num(t.before.cumulative_costs) !== 0;
+  // Start where the project has activity, so a new project is not a row of empty months.
+  const firstActive = t.rows.findIndex((r) => num(r.revenue) !== 0 || num(r.costs) !== 0);
+  if (firstActive < 0 && !earlier) return null;
+  const from = earlier ? 0 : firstActive;
+  const months = t.periods.slice(from).map((p, k) => ({ p, r: t.rows[from + k]! }));
+  const flows = months.map(({ p, r }) => ({ label: shortLabel(p.label), revenue: num(r.revenue), costs: num(r.costs), profit: num(r.profit) }));
+  const running = months.map(({ p, r }) => ({
+    label: shortLabel(p.label),
+    revenue: num(r.cumulative_revenue),
+    costs: num(r.cumulative_costs),
+    ...(t.budget ? { budget: num(t.budget) } : {}),
+  }));
+  return (
+    <div className="grid gap-6 lg:col-span-2 lg:grid-cols-2">
+      <Card>
+        <CardHeader><CardTitle>Per month</CardTitle><CardDescription>Revenue and costs (expenses + salary) in each salary period.</CardDescription></CardHeader>
+        <CardContent>
+          <PeriodChart
+            label="Project revenue, costs and profit per month"
+            data={flows}
+            unit={t.base_currency}
+            height={220}
+            bars={[{ key: "revenue", label: "Revenue", color: SERIES[0] }, { key: "costs", label: "Costs", color: SERIES[1] }]}
+            line={{ key: "profit", label: "Profit", color: SERIES[3] }}
+          />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle>Running totals</CardTitle><CardDescription>{t.budget ? "Costs so far against the budget." : "Revenue and costs so far. Set a budget on the project to track against it."}</CardDescription></CardHeader>
+        <CardContent>
+          <TrendChart
+            label="Cumulative revenue and costs"
+            data={running}
+            unit={t.base_currency}
+            height={220}
+            lines={[
+              { key: "revenue", label: "Revenue so far", color: SERIES[0] },
+              { key: "costs", label: "Costs so far", color: SERIES[1] },
+              ...(t.budget ? [{ key: "budget", label: "Budget", color: SERIES[2] }] : []),
+            ]}
+          />
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -68,10 +123,13 @@ export function ProjectFinancialsView({ projectId }: { projectId: string }) {
               {f.tasks_done} of {f.tasks_total} tasks done
               {f.tasks_overdue > 0 && <span className="text-destructive"> · {f.tasks_overdue} overdue</span>} · {formatAmount(f.logged_hours, 1)} h logged
               {sign(f.estimate_hours) > 0 && ` of ${formatAmount(f.estimate_hours, 1)} h estimated`}
+              {f.hours_used_pct && <span className={cn(Number(f.hours_used_pct) > 100 && "text-destructive")}> ({f.hours_used_pct}%)</span>}
             </p>
+            {f.revenue_per_hour && <p className="text-muted-foreground">{formatAmount(f.revenue_per_hour)} {f.base_currency} revenue per hour logged</p>}
           </CardContent>
         </Card>
       </div>
+      <ProjectTrendView projectId={projectId} />
     </div>
   );
 }

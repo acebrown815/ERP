@@ -4,13 +4,14 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
 
+import { num, PeriodChart, SERIES } from "@/components/charts/charts";
 import { PageHeader } from "@/components/erp/page-header";
 import { ErrorState, TableSkeleton } from "@/components/erp/states";
 import { ExportMenu } from "@/components/erp/export-menu";
 import { PROJECT_STATUS } from "@/components/projects/project-dialog";
 import { ProgressBar } from "@/components/projects/shared";
 import { Select } from "@/components/ui/input";
-import { Badge, Card } from "@/components/ui/misc";
+import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/misc";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import { formatAmount, sign, sum } from "@/lib/money";
@@ -40,6 +41,25 @@ export default function ProjectFinancialsPage() {
           </>
         }
       />
+      {rows.some((r) => sign(r.revenue) || sign(r.direct_expenses) || sign(r.salary_paid)) && (
+        <Card className="mb-6">
+          <CardHeader><CardTitle>Profit by project</CardTitle><CardDescription>Most profitable first (cash basis).</CardDescription></CardHeader>
+          <CardContent>
+            <PeriodChart
+              label="Revenue, costs and profit per project"
+              xKey="name"
+              data={rows.slice(0, 12).map((r) => ({ name: r.name.length > 18 ? `${r.name.slice(0, 17)}…` : r.name, revenue: num(r.revenue), costs: num(r.budget_used), profit: num(r.profit_cash) }))}
+              unit={rows[0]?.base_currency}
+              bars={[
+                { key: "revenue", label: "Revenue", color: SERIES[0] },
+                { key: "costs", label: "Expenses + salary paid", color: SERIES[1] },
+                { key: "profit", label: "Profit", color: SERIES[2] },
+              ]}
+            />
+            {rows.length > 12 && <p className="mt-2 text-xs text-muted-foreground">Top 12 of {rows.length}; all are in the table.</p>}
+          </CardContent>
+        </Card>
+      )}
       <Card className="overflow-x-auto">
         {q.isError ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : !q.data ? <TableSkeleton /> : (
           <Table>
@@ -53,6 +73,8 @@ export default function ProjectFinancialsPage() {
                 <TH className="text-right">Salary owed</TH>
                 <TH className="text-right">Profit after owed</TH>
                 <TH className="text-right">Budget left</TH>
+                <TH className="text-right" title="Hours logged on tasks, and share of the estimate">Hours</TH>
+                <TH className="text-right">Revenue / hour</TH>
                 <TH>Progress</TH>
               </TR>
             </THead>
@@ -77,6 +99,11 @@ export default function ProjectFinancialsPage() {
                   <TD className={cn("tabular text-right", r.budget_remaining != null && sign(r.budget_remaining) < 0 && "text-destructive")}>
                     {r.budget_remaining != null ? formatAmount(r.budget_remaining) : "—"}
                   </TD>
+                  <TD className="tabular whitespace-nowrap text-right">
+                    {sign(r.logged_hours) ? formatAmount(r.logged_hours, 1) : "—"}
+                    {r.hours_used_pct && <span className={cn("block text-xs", Number(r.hours_used_pct) > 100 ? "text-destructive" : "text-muted-foreground")}>{r.hours_used_pct}% of estimate</span>}
+                  </TD>
+                  <TD className="tabular text-right">{r.revenue_per_hour ? formatAmount(r.revenue_per_hour) : "—"}</TD>
                   <TD className="w-36"><ProgressBar value={r.completion_pct} /></TD>
                 </TR>
               ))}
@@ -89,6 +116,8 @@ export default function ProjectFinancialsPage() {
                   <TD className="tabular text-right">{formatAmount(total("profit_cash"))}</TD>
                   <TD className="tabular text-right">{formatAmount(total("salary_owed"))}</TD>
                   <TD className="tabular text-right">{formatAmount(total("profit_incl_owed"))}</TD>
+                  <TD />
+                  <TD />
                   <TD />
                   <TD />
                 </TR>

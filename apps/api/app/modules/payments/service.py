@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import Conflict, NotFound, PreconditionFailed, ValidationFailed, field_error
@@ -580,6 +580,65 @@ async def party_totals_between(
         .group_by(PaymentEntry.party_id)
     )
     return [(p, n, t or Decimal(0), last) for p, n, t, last in rows.all()]
+
+
+async def party_daily_totals(
+    session: AsyncSession, *, direction: str, date_from: date, date_to: date
+) -> list[tuple[uuid.UUID | None, date, int, Decimal]]:
+    """(party, day, payments, base total) for submitted payments in the range, for bucketing into periods."""
+    rows = await session.execute(
+        select(PaymentEntry.party_id, PaymentEntry.posting_date, func.count(), func.sum(PaymentEntry.base_amount))
+        .where(
+            PaymentEntry.status == "submitted",
+            PaymentEntry.direction == direction,
+            PaymentEntry.posting_date.between(date_from, date_to),
+        )
+        .group_by(PaymentEntry.party_id, PaymentEntry.posting_date)
+    )
+    return [(p, day, n, t or Decimal(0)) for p, day, n, t in rows.all()]
+
+
+async def party_first_last(session: AsyncSession, *, direction: str) -> dict[uuid.UUID, tuple[date, date]]:
+    """First and last submitted payment date per party, all time."""
+    rows = await session.execute(
+        select(PaymentEntry.party_id, func.min(PaymentEntry.posting_date), func.max(PaymentEntry.posting_date))
+        .where(
+            PaymentEntry.status == "submitted",
+            PaymentEntry.direction == direction,
+            PaymentEntry.party_id.is_not(None),
+        )
+        .group_by(PaymentEntry.party_id)
+    )
+    return {p: (first, last) for p, first, last in rows.all()}
+
+
+async def fee_totals(
+    session: AsyncSession, *, date_from: date, date_to: date
+) -> list[tuple[str, str, str, int, Decimal]]:
+    """(payment account name, currency, paid_by, payments, fees in base currency) for submitted payments.
+
+    The fee is charged on the account the money arrived in (receipts) or left from (payments, transfers)."""
+    account_id = case(
+        (PaymentEntry.direction == "receive", PaymentEntry.paid_to_payment_account_id),
+        else_=PaymentEntry.paid_from_payment_account_id,
+    )
+    rows = await session.execute(
+        select(
+            PaymentAccount.name,
+            PaymentAccount.currency,
+            PaymentEntry.fee_paid_by,
+            func.count(),
+            func.sum(PaymentEntry.fee_amount * func.coalesce(PaymentEntry.exchange_rate, 1)),
+        )
+        .join(PaymentAccount, PaymentAccount.id == account_id)
+        .where(
+            PaymentEntry.status == "submitted",
+            PaymentEntry.fee_amount > 0,
+            PaymentEntry.posting_date.between(date_from, date_to),
+        )
+        .group_by(PaymentAccount.name, PaymentAccount.currency, PaymentEntry.fee_paid_by)
+    )
+    return [(name, cur, by, n, t or Decimal(0)) for name, cur, by, n, t in rows.all()]
 
 
 async def totals(session: AsyncSession, stmt: Select[tuple[PaymentEntry]]) -> dict[str, Any]:

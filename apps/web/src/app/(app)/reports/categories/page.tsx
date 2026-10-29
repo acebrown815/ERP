@@ -3,14 +3,16 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { DateRange, usePeriodRanges, type Range } from "@/components/accounting/report-controls";
+import { DateRange, usePeriodRanges, usePreviousRange, type Range } from "@/components/accounting/report-controls";
 import { ExportMenu } from "@/components/erp/export-menu";
 import { PageHeader } from "@/components/erp/page-header";
 import { EmptyState, ErrorState, TableSkeleton } from "@/components/erp/states";
-import { Card, CardContent } from "@/components/ui/misc";
+import { ChangeText } from "@/components/reports/shared";
+import { Checkbox } from "@/components/ui/input";
+import { Card, CardContent, Label } from "@/components/ui/misc";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { api } from "@/lib/api";
-import { formatAmount } from "@/lib/money";
+import { formatAmount, subtract } from "@/lib/money";
 import type { CategoryReport } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +28,19 @@ export default function CategoryReportPage() {
     enabled: !!chosen || !periods.loading,
   });
   const r = q.data;
+  const [compare, setCompare] = useState(true);
+  const prev = usePreviousRange(range);
+  const pq = useQuery({
+    queryKey: ["report-by-category", kind, { from: prev.from, to: prev.to }],
+    queryFn: () => api.get<CategoryReport>("/reports/by-category", { kind, from: prev.from, to: prev.to }),
+    enabled: compare && (!!chosen || !periods.loading),
+  });
+  const key = (x: { account_code: string; category_id?: string | null }) => `${x.account_code}:${x.category_id ?? ""}`;
+  const before = new Map((pq.data?.rows ?? []).map((x) => [key(x), x.amount]));
+  const showPrev = compare && !!pq.data;
+  // Rows that only existed in the previous range still show, at zero now.
+  const gone = showPrev && r ? pq.data!.rows.filter((x) => !r.rows.some((y) => key(y) === key(x))) : [];
+  const change = (now: string, then: string | undefined) => subtract(now, then ?? "0");
   return (
     <>
       <PageHeader
@@ -44,6 +59,10 @@ export default function CategoryReportPage() {
             ))}
           </div>
           <DateRange {...range} onChange={setRange} />
+          <div className="flex items-center gap-2">
+            <Checkbox id="cmp" checked={compare} onChange={(e) => setCompare(e.target.checked)} />
+            <Label htmlFor="cmp" className="font-normal">Compare with {prev.label}</Label>
+          </div>
         </CardContent>
       </Card>
       <Card>
@@ -51,7 +70,12 @@ export default function CategoryReportPage() {
           <EmptyState title={`No ${kind === "income" ? "income" : "expenses"} in this range`} />
         ) : (
           <Table>
-            <THead><TR><TH>Account</TH><TH>Category</TH><TH className="w-1/3">Share</TH><TH className="text-right">Amount ({r.base_currency})</TH></TR></THead>
+            <THead>
+              <TR>
+                <TH>Account</TH><TH>Category</TH><TH className="w-1/4">Share</TH><TH className="text-right">Amount ({r.base_currency})</TH>
+                {showPrev && <><TH className="text-right">{prev.label}</TH><TH className="text-right">Change</TH></>}
+              </TR>
+            </THead>
             <TBody>
               {r.rows.map((row, i) => (
                 <TR key={i}>
@@ -64,9 +88,33 @@ export default function CategoryReportPage() {
                     </div>
                   </TD>
                   <TD className="tabular text-right">{formatAmount(row.amount)}</TD>
+                  {showPrev && (
+                    <>
+                      <TD className="tabular text-right text-muted-foreground">{formatAmount(before.get(key(row)) ?? "0")}</TD>
+                      <TD className="whitespace-nowrap text-right"><ChangeText value={change(row.amount, before.get(key(row)))} goodWhenUp={kind === "income"} /></TD>
+                    </>
+                  )}
                 </TR>
               ))}
-              <TR className="font-medium"><TD>Total</TD><TD /><TD /><TD className="tabular text-right">{formatAmount(r.total)}</TD></TR>
+              {gone.map((row, i) => (
+                <TR key={`gone-${i}`} className="text-muted-foreground">
+                  <TD><span className="font-mono text-xs">{row.account_code}</span> {row.account_name}</TD>
+                  <TD>{row.category_name ?? "Not categorised"}</TD>
+                  <TD />
+                  <TD className="tabular text-right">0.00</TD>
+                  <TD className="tabular text-right">{formatAmount(row.amount)}</TD>
+                  <TD className="whitespace-nowrap text-right"><ChangeText value={change("0", row.amount)} goodWhenUp={kind === "income"} /></TD>
+                </TR>
+              ))}
+              <TR className="font-medium">
+                <TD>Total</TD><TD /><TD /><TD className="tabular text-right">{formatAmount(r.total)}</TD>
+                {showPrev && (
+                  <>
+                    <TD className="tabular text-right">{formatAmount(pq.data!.total)}</TD>
+                    <TD className="whitespace-nowrap text-right"><ChangeText value={change(r.total, pq.data!.total)} goodWhenUp={kind === "income"} /></TD>
+                  </>
+                )}
+              </TR>
             </TBody>
           </Table>
         )}

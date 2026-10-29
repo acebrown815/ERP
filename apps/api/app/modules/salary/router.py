@@ -20,6 +20,7 @@ from app.modules.rbac.api import Scope
 from app.modules.salary import cycle, service
 from app.modules.salary.models import SalaryAdjustment, SalaryPeriod
 from app.modules.settings import api as settings
+from app.modules.tasks import api as tasks
 
 router = APIRouter(tags=["salary"])
 
@@ -760,3 +761,139 @@ async def salary_report(
             ],
         )
     return SalaryReportOut(periods=[_report_period(p) for p in periods], rows=rows)
+
+
+class PerformanceRow(BaseModel):
+    employee_id: uuid.UUID
+    employee_name: str
+    gross_revenue: Decimal  # customer payments credited to them
+    expenses: Decimal  # expenses tagged to them
+    net_revenue: Decimal
+    salary: Decimal  # calculated (earned), paid or not
+    contribution: Decimal  # net revenue - salary: what they leave the company
+    salary_pct: Decimal | None  # salary / net revenue
+    hours: Decimal  # logged on tasks
+    revenue_per_hour: Decimal | None
+    contribution_by_period: list[Decimal]
+    net_revenue_by_period: list[Decimal]
+    salary_by_period: list[Decimal]
+
+
+class PerformanceOut(BaseModel):
+    periods: list[ReportPeriod]
+    rows: list[PerformanceRow]
+    totals: PerformanceRow | None
+
+
+def _pct(part: Decimal, whole: Decimal) -> Decimal | None:
+    return (part * 100 / whole).quantize(Decimal("0.1")) if whole > 0 else None
+
+
+@router.get("/reports/employee-performance", response_model=PerformanceOut)
+async def performance_report(
+    from_period_id: uuid.UUID | None = None,
+    to_period_id: uuid.UUID | None = None,
+    format: Format = "json",
+    user: CurrentUser = Depends(require("salary.read")),
+    session: AsyncSession = Depends(get_session),
+) -> Any:
+    """Per employee: revenue brought in, expenses tagged to them, salary earned, and what is left for the company."""
+    periods = await _report_periods(session, from_period_id, to_period_id)
+    visible = await _visible(session, user, "salary.read")
+    today = await settings.today(session)
+    bal = await service.balances(
+        session, list(visible) if visible is not None else None, until=max([today, *(p.start_date for p in periods)])
+    )
+    hours = await tasks.hours_by_employee(session, date_from=periods[0].start_date, date_to=periods[-1].end_date)
+    await session.commit()
+    index = {p.id: i for i, p in enumerate(periods)}
+    n = len(periods)
+    names = await employees.names(session, list(bal))
+    zero = Decimal(0)
+    rows = []
+    for emp, b in bal.items():
+        gross = expenses = zero
+        net, pay = [zero] * n, [zero] * n
+        for line in b.lines:
+            i = index.get(line.period.id)
+            if i is None:
+                continue
+            gross += line.gross_revenue
+            expenses += line.expenses
+            # Net revenue can go below zero (expenses larger than revenue); the formula never pays on that.
+            net[i] = line.gross_revenue - line.expenses
+            pay[i] = line.calculated
+        worked = hours.get(emp, zero) if visible is None or emp in visible else zero
+        if not any(net) and not any(pay) and not gross and not worked:
+            continue
+        net_total, salary_total = sum(net, zero), sum(pay, zero)
+        rows.append(
+            PerformanceRow(
+                employee_id=emp,
+                employee_name=names.get(emp, "?"),
+                gross_revenue=gross,
+                expenses=expenses,
+                net_revenue=net_total,
+                salary=salary_total,
+                contribution=net_total - salary_total,
+                salary_pct=_pct(salary_total, net_total),
+                hours=worked,
+                revenue_per_hour=(net_total / worked).quantize(Decimal("0.01")) if worked > 0 else None,
+                contribution_by_period=[a - b for a, b in zip(net, pay, strict=True)],
+                net_revenue_by_period=net,
+                salary_by_period=pay,
+            )
+        )
+    rows.sort(key=lambda r: -r.contribution)
+    totals = None
+    if rows:
+        net_t = sum((r.net_revenue for r in rows), zero)
+        sal_t = sum((r.salary for r in rows), zero)
+        hrs_t = sum((r.hours for r in rows), zero)
+        totals = PerformanceRow(
+            employee_id=uuid.UUID(int=0),
+            employee_name="Total",
+            gross_revenue=sum((r.gross_revenue for r in rows), zero),
+            expenses=sum((r.expenses for r in rows), zero),
+            net_revenue=net_t,
+            salary=sal_t,
+            contribution=net_t - sal_t,
+            salary_pct=_pct(sal_t, net_t),
+            hours=hrs_t,
+            revenue_per_hour=(net_t / hrs_t).quantize(Decimal("0.01")) if hrs_t > 0 else None,
+            contribution_by_period=[sum((r.contribution_by_period[i] for r in rows), zero) for i in range(n)],
+            net_revenue_by_period=[sum((r.net_revenue_by_period[i] for r in rows), zero) for i in range(n)],
+            salary_by_period=[sum((r.salary_by_period[i] for r in rows), zero) for i in range(n)],
+        )
+    if format != "json":
+        return export_response(
+            format,
+            "employee-performance",
+            [
+                "employee",
+                "revenue",
+                "expenses",
+                "net revenue",
+                "salary",
+                "contribution",
+                "salary % of revenue",
+                "hours",
+                "revenue per hour",
+            ],
+            [
+                [
+                    r.employee_name,
+                    r.gross_revenue,
+                    r.expenses,
+                    r.net_revenue,
+                    r.salary,
+                    r.contribution,
+                    r.salary_pct,
+                    r.hours,
+                    r.revenue_per_hour,
+                ]
+                for r in [*rows, *([totals] if totals else [])]
+            ],
+            title=f"Employee performance, {periods[0].label} to {periods[-1].label}",
+        )
+    return PerformanceOut(periods=[_report_period(p) for p in periods], rows=rows, totals=totals)
