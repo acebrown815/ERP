@@ -1,12 +1,12 @@
 "use client";
 
-import { ChevronDown, KeyRound, LogOut, Menu, Moon, Sun, X } from "lucide-react";
+import { ChevronDown, KeyRound, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, Sun, X } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { ChangePasswordDialog } from "@/components/erp/change-password-dialog";
 import { NotificationsBell } from "@/components/erp/notifications-bell";
+import { Sidebar } from "@/components/erp/sidebar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -17,58 +17,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/misc";
-import { NAV, canSee } from "@/lib/nav";
 import { useLogout, useMe } from "@/lib/session";
 import { LOGO, SITE_NAME } from "@/lib/site";
 import { cn } from "@/lib/utils";
-
-function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
-  const me = useMe();
-  const pathname = usePathname();
-  return (
-    <nav aria-label="Main" className="flex h-full flex-col gap-5 overflow-y-auto px-3 py-4">
-      {NAV.map((section) => {
-        const items = section.items.filter((i) => canSee(i, me.permissions));
-        if (!items.length) return null;
-        const Icon = section.icon;
-        return (
-          <div key={section.label}>
-            <div className="mb-1 flex items-center gap-2 px-2 text-xs font-semibold uppercase tracking-wider text-sidebar-muted">
-              <Icon className="size-3.5" aria-hidden />
-              {section.label}
-            </div>
-            <ul className="flex flex-col gap-0.5">
-              {items.map((item) => {
-                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-                return (
-                  <li key={item.href}>
-                    <Link
-                      href={item.href}
-                      onClick={onNavigate}
-                      aria-current={active ? "page" : undefined}
-                      className={cn(
-                        "flex items-center justify-between rounded-md px-2 py-1.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-active",
-                        active && "bg-sidebar-active font-medium text-white",
-                        item.phase && "text-sidebar-muted",
-                      )}
-                    >
-                      {item.label}
-                      {item.phase && (
-                        <span className="rounded border border-sidebar-border px-1 text-[10px] text-sidebar-muted">
-                          P{item.phase}
-                        </span>
-                      )}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        );
-      })}
-    </nav>
-  );
-}
 
 function ThemeToggle() {
   const [dark, setDark] = useState(false);
@@ -142,28 +93,70 @@ function UserMenu() {
   );
 }
 
-export function AppShell({ children }: { children: ReactNode }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const brand = (
-    <Link href="/dashboard" className="flex items-center gap-2 px-5 py-4 font-semibold text-white">
+const COLLAPSED_KEY = "nav.collapsed";
+
+function Brand({ compact = false }: { compact?: boolean }) {
+  return (
+    <Link href="/dashboard" title={SITE_NAME}
+      className={cn("flex h-14 shrink-0 items-center gap-2 font-semibold text-white", compact ? "justify-center" : "px-5")}>
       {/* eslint-disable-next-line @next/next/no-img-element -- small static logo, no optimisation needed */}
-      <img src={LOGO} alt="" width={28} height={28} className="size-7 rounded-full bg-white" />
-      <span className="truncate">{SITE_NAME}</span>
+      <img src={LOGO} alt="" width={28} height={28} className="size-7 shrink-0 rounded-full bg-white" />
+      {!compact && <span className="truncate">{SITE_NAME}</span>}
     </Link>
   );
+}
+
+export function AppShell({ children }: { children: ReactNode }) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  // Desktop only: the sidebar shrinks to an icon rail. Remembered per browser.
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      setCollapsed(localStorage.getItem(COLLAPSED_KEY) === "1");
+    } catch {
+      /* storage unavailable: start expanded */
+    }
+  }, []);
+  const toggleCollapsed = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    try {
+      localStorage.setItem(COLLAPSED_KEY, next ? "1" : "0");
+    } catch {
+      /* storage unavailable: applies for this page view */
+    }
+  };
+  const brand = <Brand />;
 
   return (
     <div className="flex min-h-dvh">
-      <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
-        {brand}
-        <Sidebar />
+      <aside
+        className={cn(
+          "sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 lg:flex",
+          collapsed ? "w-16" : "w-64",
+        )}
+      >
+        <div className="border-b border-sidebar-border"><Brand compact={collapsed} /></div>
+        <Sidebar collapsed={collapsed} />
+        <div className={cn("flex shrink-0 border-t border-sidebar-border p-2", collapsed ? "justify-center" : "justify-end")}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-sidebar-muted hover:bg-sidebar-active hover:text-white"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={toggleCollapsed}
+          >
+            {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
+          </Button>
+        </div>
       </aside>
 
       {mobileOpen && (
         <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
           <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
           <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-sidebar">
-            <div className="flex items-center justify-between pr-3">
+            <div className="flex items-center justify-between border-b border-sidebar-border pr-3">
               {brand}
               <Button
                 variant="ghost"
