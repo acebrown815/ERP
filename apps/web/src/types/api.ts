@@ -1091,6 +1091,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/payment-entries/totals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Entry Totals
+         * @description Totals for the same filters as the list (what an employee or an account moved).
+         */
+        get: operations["entry_totals_api_v1_payment_entries_totals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/payment-entries/proposal": {
         parameters: {
             query?: never;
@@ -3458,6 +3478,19 @@ export interface components {
              * @default []
              */
             allocations: components["schemas"]["AllocationOut"][];
+        };
+        /** EntryTotalsOut */
+        EntryTotalsOut: {
+            /** Count */
+            count: number;
+            /** Received */
+            received: string;
+            /** Paid */
+            paid: string;
+            /** Transferred */
+            transferred: string;
+            /** Base Currency */
+            base_currency: string;
         };
         /** EntryUpdateIn */
         EntryUpdateIn: {
@@ -8875,6 +8908,7 @@ export interface operations {
                 from?: string | null;
                 to?: string | null;
                 q?: string | null;
+                employee_id?: string | null;
                 format?: "json" | "csv" | "xlsx" | "pdf";
                 page?: number;
                 page_size?: number;
@@ -8925,6 +8959,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EntryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    entry_totals_api_v1_payment_entries_totals_get: {
+        parameters: {
+            query?: {
+                status?: ("draft" | "submitted" | "cancelled") | null;
+                direction?: ("receive" | "pay" | "internal_transfer") | null;
+                party_id?: string | null;
+                project_id?: string | null;
+                payment_account_id?: string | null;
+                method_category_id?: string | null;
+                purpose_category_id?: string | null;
+                from?: string | null;
+                to?: string | null;
+                q?: string | null;
+                employee_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntryTotalsOut"];
                 };
             };
             /** @description Validation Error */

@@ -204,8 +204,19 @@ def list_stmt(
     date_from: date | None,
     date_to: date | None,
     q: str | None,
+    employee_id: uuid.UUID | None = None,
+    employee_party_id: uuid.UUID | None = None,
 ) -> Select[tuple[PaymentEntry]]:
     stmt = select(PaymentEntry).order_by(PaymentEntry.posting_date.desc(), PaymentEntry.number.desc())
+    if employee_id:
+        # Everything about one employee: revenue split to them, salary paid to them, expenses tagged to them.
+        who = [
+            PaymentEntry.employee_id == employee_id,
+            PaymentEntry.id.in_(attribution.payment_ids_for_employee(employee_id)),
+        ]
+        if employee_party_id:
+            who.append(PaymentEntry.party_id == employee_party_id)
+        stmt = stmt.where(or_(*who))
     for col, value in (
         (PaymentEntry.status, status),
         (PaymentEntry.direction, direction),
@@ -569,3 +580,20 @@ async def party_totals_between(
         .group_by(PaymentEntry.party_id)
     )
     return [(p, n, t or Decimal(0), last) for p, n, t, last in rows.all()]
+
+
+async def totals(session: AsyncSession, stmt: Select[tuple[PaymentEntry]]) -> dict[str, Any]:
+    """Count and base-currency totals of a filtered list (submitted entries only count toward money)."""
+    sub = stmt.order_by(None).subquery()
+    rows = await session.execute(
+        select(sub.c.direction, sub.c.status, func.count(), func.sum(sub.c.base_amount)).group_by(
+            sub.c.direction, sub.c.status
+        )
+    )
+    out: dict[str, Any] = {"count": 0, "received": Decimal(0), "paid": Decimal(0), "transferred": Decimal(0)}
+    for direction, status, n, total in rows.all():
+        out["count"] += n
+        if status == "submitted":
+            key = {"receive": "received", "pay": "paid"}.get(direction, "transferred")
+            out[key] += total or Decimal(0)
+    return out

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Repeat } from "lucide-react";
+import { ArrowLeft, Receipt, Repeat } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
@@ -85,7 +85,14 @@ export default function EmployeePage() {
       <PageHeader
         title={e.full_name}
         description={[e.number, e.job_title, dept].filter(Boolean).join(" · ")}
-        actions={<Button variant="outline" asChild><Link href="/employees"><ArrowLeft /> Directory</Link></Button>}
+        actions={
+          <>
+            {(can("payments.create") || can("reports.financial")) && (
+              <Button variant="outline" asChild><Link href={`/accounting/payment-entries?employee_id=${e.id}`}><Receipt /> Payments</Link></Button>
+            )}
+            <Button variant="outline" asChild><Link href="/employees"><ArrowLeft /> Directory</Link></Button>
+          </>
+        }
       />
       <div className="mb-6 grid gap-6 lg:grid-cols-2">
         <Card>

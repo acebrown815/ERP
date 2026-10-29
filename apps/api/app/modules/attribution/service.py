@@ -2,6 +2,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -272,3 +273,10 @@ async def for_payments(session: AsyncSession, payment_ids: list[uuid.UUID]) -> d
         for r in rows.scalars():
             out[r.payment_entry_id].append(r)
     return out
+
+
+def payment_ids_for_employee(employee_id: uuid.UUID) -> Any:
+    """Subquery: payments whose split credits `employee_id` (draft or active)."""
+    return select(RevenueAllocation.payment_entry_id).where(
+        RevenueAllocation.employee_id == employee_id, RevenueAllocation.status != "cancelled"
+    )

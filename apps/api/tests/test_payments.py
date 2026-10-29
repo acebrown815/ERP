@@ -544,3 +544,44 @@ async def test_payment_accounts(admin, client_as: ClientFactory) -> None:  # typ
     finance = await client_as("finance_manager")
     shown = next(p for p in (await finance.get("/api/v1/payment-accounts")).json() if p["id"] == checking)
     assert shown["details"]["iban"] == "DE89370400440532013000"  # finance manages payment accounts
+
+
+async def test_filter_by_employee_and_payment_account(admin, scenario) -> None:  # type: ignore[no-untyped-def]
+    receipt = await create_and_submit(
+        admin, await receipt_body(party_id=scenario["customer"], project_id=scenario["project"])
+    )
+    party_a = (await admin.get(f"/api/v1/employees/{scenario['a']}")).json()["party_id"]
+    pay = {
+        "posting_date": "2026-11-20",
+        "direction": "pay",
+        "amount": "100",
+        "method_category_id": await category_id("payment_method", "bank_transfer"),
+        "paid_from_payment_account_id": await payment_account_id("Company Checking"),
+    }
+    salary = await create_and_submit(
+        admin,
+        {**pay, "purpose_category_id": await category_id("payment_purpose", "employee_salary"), "party_id": party_a},
+    )
+    tagged = await create_and_submit(
+        admin,
+        {
+            **pay,
+            "amount": "40",
+            "purpose_category_id": await category_id("payment_purpose", "operating_expense"),
+            "category_id": await category_id("expense_category", "software_subscriptions"),
+            "employee_id": scenario["b"],
+        },
+    )
+    # A: split on the receipt + salary paid to A. B: split on the receipt + expense tagged to B.
+    a = (await admin.get(PE, params={"employee_id": scenario["a"]})).json()["items"]
+    assert {e["number"] for e in a} == {receipt["number"], salary["number"]}
+    b = (await admin.get(PE, params={"employee_id": scenario["b"]})).json()["items"]
+    assert {e["number"] for e in b} == {receipt["number"], tagged["number"]}
+    totals = (await admin.get(f"{PE}/totals", params={"employee_id": scenario["a"]})).json()
+    assert (totals["count"], D(totals["received"]), D(totals["paid"])) == (2, D(10000), D(100))
+
+    checking = await payment_account_id("Company Checking")
+    by_account = (await admin.get(f"{PE}/totals", params={"payment_account_id": checking})).json()
+    assert by_account["count"] == 3 and D(by_account["received"]) == 10000 and D(by_account["paid"]) == 140
+    usdt = (await admin.get(PE, params={"payment_account_id": await payment_account_id("USDT Wallet")})).json()
+    assert usdt["items"] == []

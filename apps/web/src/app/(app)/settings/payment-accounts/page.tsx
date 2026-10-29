@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Plus } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -99,7 +100,9 @@ export default function PaymentAccountsPage() {
   });
   const columns = useMemo<ColumnDef<PaymentAccount, unknown>[]>(
     () => [
-      { accessorKey: "name", header: "Name", cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
+      { accessorKey: "name", header: "Name", cell: ({ row }) => (
+        <Link href={`/accounting/payment-entries?payment_account_id=${row.original.id}`} className="font-medium hover:underline" title="See its payments">{row.original.name}</Link>
+      ) },
       { accessorKey: "kind", header: "Kind", cell: ({ row }) => KIND[row.original.kind] ?? row.original.kind },
       { accessorKey: "currency", header: "Currency" },
       { id: "ledger", header: "Ledger account", cell: ({ row }) => <span><span className="font-mono text-xs text-muted-foreground">{row.original.account_code}</span> {row.original.account_name}</span> },

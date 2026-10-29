@@ -16,6 +16,7 @@ from app.core.pagination import Page, PageParams, page_params, paginate
 from app.modules.accounting import api as accounting
 from app.modules.attribution import api as attribution
 from app.modules.auth.api import CurrentUser, require, require_any
+from app.modules.employees import api as employees
 from app.modules.payments import service
 from app.modules.payments.models import PaymentAccount, PaymentEntry
 from app.modules.settings import api as settings
@@ -446,11 +447,15 @@ async def list_entries(
     date_from: date | None = Query(default=None, alias="from"),
     date_to: date | None = Query(default=None, alias="to"),
     q: Annotated[str | None, Query(max_length=100)] = None,
+    employee_id: uuid.UUID | None = None,
     format: Format = "json",
     _: CurrentUser = ReadPayments,
     session: AsyncSession = Depends(get_session),
 ) -> Any:
+    employee_party_id = (await employees.get(session, employee_id)).party_id if employee_id else None
     stmt = service.list_stmt(
+        employee_id=employee_id,
+        employee_party_id=employee_party_id,
         status=status,
         direction=direction,
         party_id=party_id,
@@ -522,6 +527,50 @@ async def list_entries(
     return Page(
         items=await _entries_out(session, list(rows)), total=total, page=params.page, page_size=params.page_size
     )
+
+
+class EntryTotalsOut(BaseModel):
+    count: int
+    received: Decimal  # submitted receipts, base currency
+    paid: Decimal  # submitted payments out
+    transferred: Decimal  # submitted transfers between own accounts
+    base_currency: str
+
+
+@router.get("/payment-entries/totals", response_model=EntryTotalsOut)
+async def entry_totals(
+    status: Literal["draft", "submitted", "cancelled"] | None = None,
+    direction: Direction | None = None,
+    party_id: uuid.UUID | None = None,
+    project_id: uuid.UUID | None = None,
+    payment_account_id: uuid.UUID | None = None,
+    method_category_id: uuid.UUID | None = None,
+    purpose_category_id: uuid.UUID | None = None,
+    date_from: date | None = Query(default=None, alias="from"),
+    date_to: date | None = Query(default=None, alias="to"),
+    q: Annotated[str | None, Query(max_length=100)] = None,
+    employee_id: uuid.UUID | None = None,
+    _: CurrentUser = ReadPayments,
+    session: AsyncSession = Depends(get_session),
+) -> EntryTotalsOut:
+    """Totals for the same filters as the list (what an employee or an account moved)."""
+    employee_party_id = (await employees.get(session, employee_id)).party_id if employee_id else None
+    stmt = service.list_stmt(
+        employee_id=employee_id,
+        employee_party_id=employee_party_id,
+        status=status,
+        direction=direction,
+        party_id=party_id,
+        project_id=project_id,
+        payment_account_id=payment_account_id,
+        method_category_id=method_category_id,
+        purpose_category_id=purpose_category_id,
+        date_from=date_from,
+        date_to=date_to,
+        q=q,
+    )
+    t = await service.totals(session, stmt)
+    return EntryTotalsOut(**t, base_currency=(await settings.base_currency(session)).code)
 
 
 @router.get("/payment-entries/proposal", response_model=list[SplitRow])

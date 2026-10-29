@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Pencil } from "lucide-react";
+import { Pencil, Receipt } from "lucide-react";
 import Link from "next/link";
 import { use, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -72,12 +72,19 @@ export default function PartyPage({ params }: { params: Promise<{ id: string }> 
       <PageHeader
         title={p.name}
         description={<span className="flex items-center gap-2"><Badge variant="muted">{KIND_LABEL[kind].one}</Badge><span className="font-mono text-xs">{p.number}</span>{!p.is_active && <Badge variant="warning">Inactive</Badge>}<Link href={back} className="text-primary hover:underline">All {KIND_LABEL[kind].many.toLowerCase()}</Link></span>}
-        actions={can("parties.manage") && (
+        actions={
           <>
-            <Button variant="outline" loading={toggle.isPending} onClick={() => toggle.mutate(p)}>{p.is_active ? "Deactivate" : "Activate"}</Button>
-            <Button onClick={() => setEditing(true)}><Pencil /> Edit</Button>
+            {(can("payments.create") || can("reports.financial")) && (
+              <Button variant="outline" asChild><Link href={`/accounting/payment-entries?party_id=${p.id}`}><Receipt /> Payments</Link></Button>
+            )}
+            {can("parties.manage") && (
+              <>
+                <Button variant="outline" loading={toggle.isPending} onClick={() => toggle.mutate(p)}>{p.is_active ? "Deactivate" : "Activate"}</Button>
+                <Button onClick={() => setEditing(true)}><Pencil /> Edit</Button>
+              </>
+            )}
           </>
-        )}
+        }
       />
       <div className="grid gap-6 lg:grid-cols-3">
         <Card>
