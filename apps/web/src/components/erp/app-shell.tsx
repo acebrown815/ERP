@@ -19,6 +19,7 @@ import {
 import { Badge } from "@/components/ui/misc";
 import { NAV, canSee } from "@/lib/nav";
 import { useLogout, useMe } from "@/lib/session";
+import { LOGO, SITE_NAME } from "@/lib/site";
 import { cn } from "@/lib/utils";
 
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
@@ -141,14 +142,13 @@ function UserMenu() {
   );
 }
 
-export function AppShell({ companyName, children }: { companyName: string; children: ReactNode }) {
+export function AppShell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const brand = (
     <Link href="/dashboard" className="flex items-center gap-2 px-5 py-4 font-semibold text-white">
-      <span className="flex size-7 items-center justify-center rounded-md bg-primary text-sm text-primary-foreground">
-        {companyName.slice(0, 1).toUpperCase()}
-      </span>
-      <span className="truncate">{companyName}</span>
+      {/* eslint-disable-next-line @next/next/no-img-element -- small static logo, no optimisation needed */}
+      <img src={LOGO} alt="" width={28} height={28} className="size-7 rounded-full bg-white" />
+      <span className="truncate">{SITE_NAME}</span>
     </Link>
   );
 

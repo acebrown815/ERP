@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/misc";
 import { api, ApiError } from "@/lib/api";
 import { meQueryKey } from "@/lib/session";
+import { LOGO, SITE_NAME } from "@/lib/site";
 import type { Me } from "@/lib/types";
 
 const schema = z.object({
@@ -76,9 +77,9 @@ export default function LoginPage() {
     <div className="flex min-h-dvh items-center justify-center bg-muted/40 px-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-lg bg-primary text-lg font-semibold text-primary-foreground">
-            E
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element -- small static logo, no optimisation needed */}
+          <img src={LOGO} alt="" width={64} height={64} className="mx-auto mb-3 size-16 rounded-full bg-white" />
+          <p className="mb-1 text-sm font-medium text-muted-foreground">{SITE_NAME}</p>
           <h1 className="text-xl font-semibold">Sign in</h1>
           <p className="mt-1 text-sm text-muted-foreground">Use the account your administrator created for you.</p>
         </div>
