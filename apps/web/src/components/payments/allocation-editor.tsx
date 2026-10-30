@@ -23,8 +23,11 @@ export const newSplitRow = (employee_id: string | null = null, value = ""): Spli
 /**
  * Revenue split for customer payments: who generated this revenue. Must cover exactly 100% (or the full
  * eligible amount) before the payment can be submitted (docs/architecture.md, Section 8).
+ * Expense split (kind="expense"): how an expense is shared between employees, for reports only. It may
+ * cover less than 100%; the rest stays with the company.
  */
 export function AllocationEditor({
+  kind = "revenue",
   mode,
   onModeChange,
   rows,
@@ -36,6 +39,7 @@ export function AllocationEditor({
   error,
   disabled,
 }: {
+  kind?: "revenue" | "expense";
   mode: SplitMode;
   onModeChange: (m: SplitMode) => void;
   rows: SplitDraft[];
@@ -49,7 +53,8 @@ export function AllocationEditor({
 }) {
   const total = sum(rows.map((r) => r.value));
   const target = mode === "percent" ? "100" : eligible ?? null;
-  const complete = target !== null && sum([total, `-${target}`]) === "0";
+  const remaining = target !== null ? Number(sum([target, `-${total}`])) : null;
+  const complete = remaining === 0 || (kind === "expense" && remaining !== null && remaining >= 0 && rows.length > 0);
   const pct = mode === "percent" ? Math.min(Number(total), 100) : eligible ? Math.min((Number(total) / Number(eligible)) * 100, 100) : 0;
   const amountFor = (employee_id: string | null) => computed?.find((a) => a.employee_id === employee_id)?.amount;
   const update = (key: string, patch: Partial<SplitDraft>) => onChange(rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -58,10 +63,21 @@ export function AllocationEditor({
     <Card>
       <CardHeader className="flex-row flex-wrap items-start justify-between gap-3">
         <div>
-          <CardTitle>Employee revenue split</CardTitle>
-          <CardDescription>
-            Optional. Who this revenue is credited to; it counts toward their salary. If you add employees, the split must cover 100%.
-          </CardDescription>
+          {kind === "expense" ? (
+            <>
+              <CardTitle>Employee expense split</CardTitle>
+              <CardDescription>
+                Optional. Shares this expense between employees in reports (monthly summary, employee performance). It does not change anyone&apos;s salary. Anything not split stays with the company.
+              </CardDescription>
+            </>
+          ) : (
+            <>
+              <CardTitle>Employee revenue split</CardTitle>
+              <CardDescription>
+                Optional. Who this revenue is credited to; it counts toward their salary. If you add employees, the split must cover 100%.
+              </CardDescription>
+            </>
+          )}
         </div>
         <div className="flex gap-1 rounded-md border p-0.5 text-sm" role="radiogroup" aria-label="Split by">
           {(["percent", "amount"] as const).map((m) => (
@@ -80,7 +96,9 @@ export function AllocationEditor({
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        {rows.length === 0 && <p className="text-sm text-muted-foreground">Add the employees who worked on this.</p>}
+        {rows.length === 0 && (
+          <p className="text-sm text-muted-foreground">{kind === "expense" ? "Add the employees this expense was for." : "Add the employees who worked on this."}</p>
+        )}
         {rows.map((r, i) => (
           <div key={r.key} className="grid grid-cols-[1fr_7rem_auto] items-center gap-2 sm:grid-cols-[1fr_8rem_8rem_auto]">
             <EmployeePicker
@@ -134,6 +152,7 @@ export function AllocationEditor({
             </span>
             <span>
               of {mode === "percent" ? "100%" : eligible ? `${formatAmount(eligible)} ${baseCurrency}` : "—"}
+              {kind === "expense" && remaining !== null && remaining > 0 && rows.length > 0 && " · the rest stays with the company"}
             </span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-muted" aria-hidden>

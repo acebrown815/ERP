@@ -40,7 +40,7 @@ export default function EmployeePerformancePage() {
     <>
       <PageHeader
         title="Employee performance"
-        description={`What each person brings in, what they cost, and what is left for the company (${base}). Revenue is net of expenses tagged to them; salary is what they earned, paid or not.`}
+        description={`What each person brings in, what they cost, and what is left for the company (${base}). Revenue is net of expenses tagged to them; salary is what they earned, paid or not; shared expenses are their part of split expenses (reports only).`}
         actions={periods.data && <PeriodRange periods={periods.data} value={range} onChange={setRange} csvPath="/reports/employee-performance" />}
       />
       {q.isError ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : !r ? <TableSkeleton /> : r.rows.length === 0 || !t ? (
@@ -91,6 +91,7 @@ export default function EmployeePerformancePage() {
                   <TH className="text-right">Expenses</TH>
                   <TH className="text-right">Net revenue</TH>
                   <TH className="text-right">Salary</TH>
+                  <TH className="text-right" title="Their share of expenses split between employees (not in salary)">Shared expenses</TH>
                   <TH className="text-right">Left for company</TH>
                   <TH className="text-right" title="Salary earned as a share of net revenue">Salary %</TH>
                   <TH className="text-right">Hours</TH>
@@ -109,6 +110,7 @@ export default function EmployeePerformancePage() {
                       <TD className="tabular text-right text-muted-foreground">{formatAmount(x.expenses)}</TD>
                       <TD className={cn("tabular text-right", sign(x.net_revenue) < 0 && "text-destructive")}>{formatAmount(x.net_revenue)}</TD>
                       <TD className="tabular text-right">{formatAmount(x.salary)}</TD>
+                      <TD className="tabular text-right text-muted-foreground">{formatAmount(x.shared_expenses)}</TD>
                       <TD className={cn("tabular text-right font-medium", sign(x.contribution) < 0 && "text-destructive")}>{formatAmount(x.contribution)}</TD>
                       <TD className={cn("tabular text-right", high && "font-medium text-destructive")} title={high ? `Above ${HIGH_SALARY_PCT}% of what they bring in` : undefined}>
                         {x.salary_pct ? `${x.salary_pct}%` : "—"}
@@ -132,6 +134,7 @@ export default function EmployeePerformancePage() {
                   <TD className="tabular text-right">{formatAmount(t.expenses)}</TD>
                   <TD className="tabular text-right">{formatAmount(t.net_revenue)}</TD>
                   <TD className="tabular text-right">{formatAmount(t.salary)}</TD>
+                  <TD className="tabular text-right">{formatAmount(t.shared_expenses)}</TD>
                   <TD className={cn("tabular text-right", sign(t.contribution) < 0 && "text-destructive")}>{formatAmount(t.contribution)}</TD>
                   <TD className="tabular text-right">{t.salary_pct ? `${t.salary_pct}%` : "—"}</TD>
                   <TD className="tabular text-right">{num(t.hours) ? formatAmount(t.hours, 1) : "—"}</TD>

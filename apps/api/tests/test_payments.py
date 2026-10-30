@@ -184,6 +184,44 @@ async def test_processor_fee(admin, scenario, paid_by, bank, fees, eligible) -> 
     assert sum(D(a["amount"]) for a in done["allocations"]) == D(eligible)
 
 
+async def test_filter_by_ledger_account(admin, scenario) -> None:  # type: ignore[no-untyped-def]
+    """Any ledger line counts (a company-paid fee lands on 5600); a group includes its children."""
+    receipt = await create_and_submit(
+        admin,
+        await receipt_body(
+            party_id=scenario["customer"], project_id=scenario["project"], fee_amount="30.00", fee_paid_by="company"
+        ),
+    )
+    aws = await customer("AWS", kind="supplier")
+    bill = await create_and_submit(
+        admin,
+        {
+            "posting_date": "2026-11-12",
+            "direction": "pay",
+            "party_id": aws,
+            "amount": "420.50",
+            "method_category_id": await category_id("payment_method", "credit_card"),
+            "purpose_category_id": await category_id("payment_purpose", "operating_expense"),
+            "category_id": await category_id("expense_category", "cloud_infrastructure"),
+            "paid_from_payment_account_id": await payment_account_id("Corporate Credit Card"),
+        },
+    )
+
+    async def ids(*codes: str) -> set[str]:
+        chosen = ",".join([await account_id(c) for c in codes])
+        page = (await admin.get(PE, params={"account_ids": chosen})).json()
+        return {p["id"] for p in page["items"]}
+
+    assert await ids("4100") == {receipt["id"]}
+    assert await ids("5600") == {receipt["id"]}  # the fee line
+    assert await ids("5200") == {bill["id"]}
+    assert await ids("5000") == {receipt["id"], bill["id"]}  # the expenses group
+    assert await ids("4100", "5200") == {receipt["id"], bill["id"]}  # several: any of them
+    totals = (await admin.get(f"{PE}/totals", params={"account_ids": await account_id("5200")})).json()
+    assert D(totals["paid"]) == D("420.50") and totals["count"] == 1
+    assert (await admin.get(PE, params={"account_ids": "nope"})).status_code == 422
+
+
 async def test_operating_expense_and_category_default_account(admin) -> None:  # type: ignore[no-untyped-def]
     aws = await customer("AWS", kind="supplier")
     body = {

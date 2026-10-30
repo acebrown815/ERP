@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, MoreHorizontal, Plus } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -115,6 +116,7 @@ export default function ChartOfAccountsPage() {
   const qc = useQueryClient();
   const can = useCan();
   const manage = can("accounts.manage");
+  const canSeePayments = can("payments.create") || can("reports.financial");
   const accounts = useAccounts();
   const company = useCompany();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -213,8 +215,21 @@ export default function ChartOfAccountsPage() {
                               {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
                             </button>
                           ) : <span className="w-4" />}
-                          <span className="font-mono text-xs text-muted-foreground">{a.code}</span>
-                          <span>{a.name}</span>
+                          {canSeePayments ? (
+                            <Link
+                              href={`/accounting/payment-entries?account_ids=${a.id}`}
+                              className="flex items-center gap-1 hover:underline"
+                              title={a.is_group ? "Show payments booked to this group's accounts" : "Show payments booked to this account"}
+                            >
+                              <span className="font-mono text-xs text-muted-foreground">{a.code}</span>
+                              <span>{a.name}</span>
+                            </Link>
+                          ) : (
+                            <>
+                              <span className="font-mono text-xs text-muted-foreground">{a.code}</span>
+                              <span>{a.name}</span>
+                            </>
+                          )}
                           {a.currency !== base && <Badge variant="outline">{a.currency}</Badge>}
                           {!a.is_active && <Badge variant="muted">Inactive</Badge>}
                         </div>

@@ -193,7 +193,7 @@ export function PaymentEntryView({ entry }: { entry: PaymentEntry }) {
         {entry.allocations.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Employee revenue split</CardTitle>
+              <CardTitle>{entry.direction === "pay" ? "Employee expense split" : "Employee revenue split"}</CardTitle>
             </CardHeader>
             <CardContent>
               <table className="w-full text-sm">

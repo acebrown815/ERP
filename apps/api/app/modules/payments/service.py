@@ -206,6 +206,7 @@ def list_stmt(
     q: str | None,
     employee_id: uuid.UUID | None = None,
     employee_party_id: uuid.UUID | None = None,
+    account_ids: list[uuid.UUID] | None = None,
 ) -> Select[tuple[PaymentEntry]]:
     stmt = select(PaymentEntry).order_by(PaymentEntry.posting_date.desc(), PaymentEntry.number.desc())
     if employee_id:
@@ -232,6 +233,14 @@ def list_stmt(
             or_(
                 PaymentEntry.paid_from_payment_account_id == payment_account_id,
                 PaymentEntry.paid_to_payment_account_id == payment_account_id,
+            )
+        )
+    if account_ids:
+        # Any ledger line of the payment (its income/expense account, a fee, FX), or for a draft the chosen one.
+        stmt = stmt.where(
+            or_(
+                PaymentEntry.counter_account_id.in_(account_ids),
+                PaymentEntry.journal_entry_id.in_(accounting.entries_touching(account_ids)),
             )
         )
     if date_from:
@@ -388,6 +397,19 @@ async def preview(session: AsyncSession, pe: PaymentEntry) -> tuple[posting.Post
     return result, prepared
 
 
+def check_expense_split(pe: PaymentEntry, rule: str | None) -> None:
+    """An expense is either one employee's (lowers their salary) or shared between employees (reports only)."""
+    if rule == "P2":
+        raise ValidationFailed(
+            "A salary payment cannot be split", errors=[field_error("allocations", "Salary payments are not split")]
+        )
+    if pe.employee_id:
+        raise ValidationFailed(
+            "Tag one employee or split between employees, not both",
+            errors=[field_error("allocations", "Remove the employee tag to split this expense", "tagged")],
+        )
+
+
 async def submit(session: AsyncSession, *, actor_id: uuid.UUID, pe_id: uuid.UUID) -> PaymentEntry:
     """One transaction: validate, post to the ledger, activate the revenue split (Section 7.1)."""
     pe = await get(session, pe_id, lock=True)
@@ -425,6 +447,17 @@ async def submit(session: AsyncSession, *, actor_id: uuid.UUID, pe_id: uuid.UUID
             eligible=result.eligible_amount_base,
             on=pe.posting_date,
             precision=base.precision,
+        )
+    elif pe.direction == "pay" and await attribution.for_payment(session, pe.id):
+        check_expense_split(pe, result.rule)
+        base = await settings.base_currency(session)
+        await attribution.activate(
+            session,
+            payment_id=pe.id,
+            eligible=result.base_amount,
+            on=pe.posting_date,
+            precision=base.precision,
+            kind="expense",
         )
     if result.rule == "P2" and pe.employee_id:
         await salary.record_payment(

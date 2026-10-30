@@ -770,7 +770,8 @@ class PerformanceRow(BaseModel):
     expenses: Decimal  # expenses tagged to them
     net_revenue: Decimal
     salary: Decimal  # calculated (earned), paid or not
-    contribution: Decimal  # net revenue - salary: what they leave the company
+    shared_expenses: Decimal = Decimal(0)  # their share of split expenses (reports only, not in salary)
+    contribution: Decimal  # net revenue - salary - shared expenses: what they leave the company
     salary_pct: Decimal | None  # salary / net revenue
     hours: Decimal  # logged on tasks
     revenue_per_hour: Decimal | None
@@ -805,6 +806,9 @@ async def performance_report(
         session, list(visible) if visible is not None else None, until=max([today, *(p.start_date for p in periods)])
     )
     hours = await tasks.hours_by_employee(session, date_from=periods[0].start_date, date_to=periods[-1].end_date)
+    shared_by_period = [
+        await attribution.expense_totals(session, date_from=p.start_date, date_to=p.end_date) for p in periods
+    ]
     await session.commit()
     index = {p.id: i for i, p in enumerate(periods)}
     n = len(periods)
@@ -824,9 +828,10 @@ async def performance_report(
             net[i] = line.gross_revenue - line.expenses
             pay[i] = line.calculated
         worked = hours.get(emp, zero) if visible is None or emp in visible else zero
-        if not any(net) and not any(pay) and not gross and not worked:
+        shared = [s.get(emp, zero) for s in shared_by_period]
+        if not any(net) and not any(pay) and not gross and not worked and not any(shared):
             continue
-        net_total, salary_total = sum(net, zero), sum(pay, zero)
+        net_total, salary_total, shared_total = sum(net, zero), sum(pay, zero), sum(shared, zero)
         rows.append(
             PerformanceRow(
                 employee_id=emp,
@@ -835,11 +840,12 @@ async def performance_report(
                 expenses=expenses,
                 net_revenue=net_total,
                 salary=salary_total,
-                contribution=net_total - salary_total,
+                shared_expenses=shared_total,
+                contribution=net_total - salary_total - shared_total,
                 salary_pct=_pct(salary_total, net_total),
                 hours=worked,
                 revenue_per_hour=(net_total / worked).quantize(Decimal("0.01")) if worked > 0 else None,
-                contribution_by_period=[a - b for a, b in zip(net, pay, strict=True)],
+                contribution_by_period=[a - b - c for a, b, c in zip(net, pay, shared, strict=True)],
                 net_revenue_by_period=net,
                 salary_by_period=pay,
             )
@@ -850,6 +856,7 @@ async def performance_report(
         net_t = sum((r.net_revenue for r in rows), zero)
         sal_t = sum((r.salary for r in rows), zero)
         hrs_t = sum((r.hours for r in rows), zero)
+        shared_t = sum((r.shared_expenses for r in rows), zero)
         totals = PerformanceRow(
             employee_id=uuid.UUID(int=0),
             employee_name="Total",
@@ -857,7 +864,8 @@ async def performance_report(
             expenses=sum((r.expenses for r in rows), zero),
             net_revenue=net_t,
             salary=sal_t,
-            contribution=net_t - sal_t,
+            shared_expenses=shared_t,
+            contribution=net_t - sal_t - shared_t,
             salary_pct=_pct(sal_t, net_t),
             hours=hrs_t,
             revenue_per_hour=(net_t / hrs_t).quantize(Decimal("0.01")) if hrs_t > 0 else None,
@@ -875,6 +883,7 @@ async def performance_report(
                 "expenses",
                 "net revenue",
                 "salary",
+                "shared expenses",
                 "contribution",
                 "salary % of revenue",
                 "hours",
@@ -887,6 +896,7 @@ async def performance_report(
                     r.expenses,
                     r.net_revenue,
                     r.salary,
+                    r.shared_expenses,
                     r.contribution,
                     r.salary_pct,
                     r.hours,

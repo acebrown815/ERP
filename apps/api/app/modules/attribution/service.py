@@ -15,6 +15,8 @@ from app.modules.employees import api as employees
 from app.modules.projects import api as projects
 
 HUNDRED = Decimal(100)
+# Revenue credit only: expense splits are for reports and never reach salary.
+REVENUE = RevenueAllocation.kind == "revenue"
 
 
 @dataclass
@@ -70,7 +72,7 @@ async def replace_draft(
         if r.amount is not None and r.amount <= 0:
             errors.append(field_error(f"allocations.{i}.amount", "Must be positive"))
     if errors:
-        raise ValidationFailed("Invalid revenue split", errors=errors)
+        raise ValidationFailed("Invalid employee split", errors=errors)
     method = _method(rows) if rows else "percent"
     if method == "percent" and sum((r.percent or 0 for r in rows), Decimal(0)) > HUNDRED:
         raise ValidationFailed("Split over 100%", errors=[field_error("allocations", "Percentages exceed 100%")])
@@ -111,9 +113,11 @@ async def activate(
     on: date,
     precision: int,
     require_full: bool = True,
+    kind: str = "revenue",
 ) -> list[RevenueAllocation]:
     """The split is optional: with no rows the revenue counts toward nobody's salary. With rows, they must
-    cover the eligible amount exactly (no partial splits)."""
+    cover the eligible amount exactly (no partial splits). An expense split (kind expense) may cover less:
+    the rest stays with the company."""
     rows = await for_payment(session, payment_id)
     if not rows:
         return []
@@ -128,7 +132,7 @@ async def activate(
         )
     amounts = compute(rows, eligible, precision)
     total = sum(amounts, Decimal(0))
-    if require_full and total != eligible:
+    if require_full and kind == "revenue" and total != eligible:
         raise ValidationFailed(
             f"The revenue split must cover exactly {eligible} (currently {total})",
             errors=[field_error("allocations", f"Split covers {total} of {eligible}", "incomplete")],
@@ -139,9 +143,12 @@ async def activate(
         )
     for row, amount in zip(rows, amounts, strict=True):
         row.amount_base = amount
+        row.kind = kind
         row.status = "active"
         row.attribution_date = on
     await session.flush()
+    if kind != "revenue":
+        return rows
     for row in rows:
         emit(session, "attribution.changed", {"employee_id": str(row.employee_id), "date": on.isoformat()})
     return rows
@@ -155,7 +162,7 @@ async def cancel(session: AsyncSession, *, payment_id: uuid.UUID) -> None:
         .values(status="cancelled")
     )
     for row in rows:
-        if row.attribution_date:
+        if row.attribution_date and row.kind == "revenue":
             emit(
                 session,
                 "attribution.changed",
@@ -170,6 +177,7 @@ async def copy_as_draft(session: AsyncSession, *, from_payment_id: uuid.UUID, to
                 payment_entry_id=to_payment_id,
                 employee_id=r.employee_id,
                 project_id=r.project_id,
+                kind=r.kind,
                 method=r.method,
                 percent=r.percent,
                 amount_base=r.amount_base if r.method == "amount" else None,
@@ -192,12 +200,34 @@ async def employee_totals(
 ) -> dict[uuid.UUID, Decimal]:
     stmt = (
         select(RevenueAllocation.employee_id, func.sum(RevenueAllocation.amount_base))
-        .where(RevenueAllocation.status == "active", RevenueAllocation.attribution_date.between(date_from, date_to))
+        .where(
+            REVENUE,
+            RevenueAllocation.status == "active",
+            RevenueAllocation.attribution_date.between(date_from, date_to),
+        )
         .group_by(RevenueAllocation.employee_id)
     )
     if employee_ids is not None:
         stmt = stmt.where(RevenueAllocation.employee_id.in_(employee_ids))
     return dict((await session.execute(stmt)).all())
+
+
+async def expense_totals(
+    session: AsyncSession, *, date_from: date, date_to: date, employee_ids: list[uuid.UUID] | None = None
+) -> dict[uuid.UUID, Decimal]:
+    """Each employee's share of split expense payments (reports only)."""
+    stmt = (
+        select(RevenueAllocation.employee_id, func.sum(RevenueAllocation.amount_base))
+        .where(
+            RevenueAllocation.kind == "expense",
+            RevenueAllocation.status == "active",
+            RevenueAllocation.attribution_date.between(date_from, date_to),
+        )
+        .group_by(RevenueAllocation.employee_id)
+    )
+    if employee_ids is not None:
+        stmt = stmt.where(RevenueAllocation.employee_id.in_(employee_ids))
+    return dict((await session.execute(stmt)).all())  # type: ignore[arg-type]
 
 
 async def employee_project_totals(
@@ -211,7 +241,11 @@ async def employee_project_totals(
             func.sum(RevenueAllocation.amount_base),
             func.count(),
         )
-        .where(RevenueAllocation.status == "active", RevenueAllocation.attribution_date.between(date_from, date_to))
+        .where(
+            REVENUE,
+            RevenueAllocation.status == "active",
+            RevenueAllocation.attribution_date.between(date_from, date_to),
+        )
         .group_by(RevenueAllocation.employee_id, RevenueAllocation.project_id)
     )
     if employee_ids is not None:
@@ -227,6 +261,7 @@ async def active_for_employee(
             await session.execute(
                 select(RevenueAllocation)
                 .where(
+                    REVENUE,
                     RevenueAllocation.employee_id == employee_id,
                     RevenueAllocation.status == "active",
                     RevenueAllocation.attribution_date.between(date_from, date_to),
@@ -243,7 +278,7 @@ async def project_totals(session: AsyncSession, project_ids: list[uuid.UUID]) ->
         return {}
     rows = await session.execute(
         select(RevenueAllocation.project_id, func.sum(RevenueAllocation.amount_base))
-        .where(RevenueAllocation.status == "active", RevenueAllocation.project_id.in_(project_ids))
+        .where(REVENUE, RevenueAllocation.status == "active", RevenueAllocation.project_id.in_(project_ids))
         .group_by(RevenueAllocation.project_id)
     )
     return dict(rows.all())  # type: ignore[arg-type]
@@ -255,7 +290,7 @@ async def payment_totals(session: AsyncSession, payment_ids: list[uuid.UUID]) ->
         return {}
     rows = await session.execute(
         select(RevenueAllocation.payment_entry_id, func.sum(RevenueAllocation.amount_base))
-        .where(RevenueAllocation.status == "active", RevenueAllocation.payment_entry_id.in_(payment_ids))
+        .where(REVENUE, RevenueAllocation.status == "active", RevenueAllocation.payment_entry_id.in_(payment_ids))
         .group_by(RevenueAllocation.payment_entry_id)
     )
     return dict(rows.all())  # type: ignore[arg-type]

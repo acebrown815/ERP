@@ -24,8 +24,8 @@ class PeriodCol(BaseModel):
     in_progress: bool  # the current period: its numbers are "so far"
 
 
-async def recent_periods(session: AsyncSession, count: int) -> tuple[list[PeriodCol], date]:
-    """The last `count` started periods, oldest first, and today (company time zone)."""
+async def recent_periods(session: AsyncSession, count: int | None) -> tuple[list[PeriodCol], date]:
+    """The last `count` started periods (None: all of them), oldest first, and today (company time zone)."""
     today = await settings.today(session)
     started = [p for p in await salary.list_periods(session) if p.start_date <= today][:count]
     cols = [

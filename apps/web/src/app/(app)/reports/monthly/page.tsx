@@ -7,18 +7,21 @@ import { Delta, num, PeriodChart, SERIES, Sparkline, StatTile } from "@/componen
 import { ExportMenu } from "@/components/erp/export-menu";
 import { PageHeader } from "@/components/erp/page-header";
 import { EmptyState, ErrorState, TableSkeleton } from "@/components/erp/states";
+import { type OwnerSelection, OwnerSelect } from "@/components/reports/owner-select";
 import { DrillAmount, MonthsSelect, shortLabel } from "@/components/reports/shared";
 import { periodRange } from "@/components/salary/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/misc";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import { formatAmount, sign, sum } from "@/lib/money";
-import type { MonthlySummary } from "@/lib/types";
+import { useCan } from "@/lib/session";
+import type { Employee, MonthlySummary } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type Month = MonthlySummary["rows"][number];
 
-const costs = (r: Month) => sum([r.expenses, r.salary_paid]);
+// Company: what left the business. Employee: their expenses plus the salary they earned (paid or not).
+const costs = (r: Month, employee: boolean) => sum([r.expenses, employee ? r.salary_calculated : r.salary_paid]);
 
 function Margin({ value }: { value: string | null | undefined }) {
   if (value === null || value === undefined) return <span className="text-muted-foreground">—</span>;
@@ -26,97 +29,136 @@ function Margin({ value }: { value: string | null | undefined }) {
 }
 
 export default function MonthlySummaryPage() {
+  const can = useCan();
   const [periods, setPeriods] = useState(12);
-  // Always load 24 so year-to-date and comparisons work whatever range is shown.
+  // Without reports.financial (an employee): only their own months, no company view and no picker.
+  const financial = can("reports.financial");
+  const me = useQuery({ queryKey: ["employee", "me"], queryFn: () => api.get<Employee>("/employees/me"), enabled: !financial, retry: false });
+  const [chosen, setSelection] = useState<OwnerSelection>({ employeeIds: [], unassigned: false });
+  const selection: OwnerSelection = financial ? chosen : { employeeIds: me.data ? [me.data.id] : [], unassigned: false };
+  const params = {
+    ...(selection.employeeIds.length ? { employee_ids: selection.employeeIds.join(",") } : {}),
+    ...(selection.unassigned ? { unassigned: "true" } : {}),
+  };
+  // Load every month once, so any range can be compared with the same span just before it.
   const q = useQuery({
-    queryKey: ["report-monthly", 24],
-    queryFn: () => api.get<MonthlySummary>("/reports/monthly-summary", { periods: 24 }),
+    queryKey: ["report-monthly", "all", selection],
+    queryFn: () => api.get<MonthlySummary>("/reports/monthly-summary", { periods: 0, ...params }),
     placeholderData: keepPreviousData,
+    enabled: financial || !!me.data,
   });
   const r = q.data;
+  // A selection of employees and/or "Not assigned" rather than the whole company.
+  const emp = !!r && (r.employee_ids.length > 0 || r.unassigned);
+  const picked = r ? [...r.employee_names, ...(r.unassigned ? ["Not assigned"] : [])] : [];
+  // Payments can be filtered to one employee only.
+  const drillEmployee = r && r.employee_ids.length === 1 && !r.unassigned ? r.employee_ids[0] : null;
+  const canDrill = can("payments.create") || financial; // who can open Payment Entries
+  const cost = (m: Month) => costs(m, emp);
+  const L = emp
+    ? { income: "Revenue", profit: "Contribution", salary: "Salary earned", costsHint: "Expenses + salary earned" }
+    : { income: "Income", profit: "Profit", salary: "Salary paid", costsHint: "Expenses + salary paid" };
   const all = r?.rows ?? [];
-  const rows = all.slice(-periods);
-  const done = all.filter((m) => !m.in_progress);
-  const last = done.at(-1);
-  const before = done.at(-2);
-  const year = new Date().getFullYear();
-  const ytd = all.filter((m) => m.start_date.startsWith(String(year)));
-  const ytdIncome = sum(ytd.map((m) => m.income));
-  const ytdProfit = sum(ytd.map((m) => m.profit));
-  const trend = (f: (m: Month) => string) => done.slice(-6).map((m) => num(f(m)));
+  const rows = periods ? all.slice(-periods) : all; // 0 = all time
+  // Tiles follow the selected range, compared with the same number of months just before it.
+  const totals = (ms: Month[]) => ({
+    income: sum(ms.map((m) => m.income)),
+    costs: sum(ms.map(cost)),
+    profit: sum(ms.map((m) => m.profit)),
+  });
+  const total = totals(rows);
+  const earlier = periods ? all.slice(0, -periods).slice(-periods) : [];
+  const prev = periods && earlier.length === periods ? totals(earlier) : null;
+  const margin = num(total.income) > 0 ? (num(total.profit) / num(total.income)) * 100 : null;
+  const span = periods ? `last ${rows.length} month${rows.length === 1 ? "" : "s"}` : `all time (${rows.length} month${rows.length === 1 ? "" : "s"})`;
+  const soFar = rows.at(-1)?.in_progress ? `Includes ${rows.at(-1)!.label} so far` : undefined;
+  const trend = (f: (m: Month) => string) => rows.map((m) => num(f(m)));
+  const vsPrev = periods === 12 ? "vs the year before" : periods === 24 ? "vs the 2 years before" : `vs previous ${periods} months`;
   const base = r?.base_currency ?? "";
 
   const chartData = rows.map((m) => ({
     label: shortLabel(m.label),
     income: num(m.income),
     expenses: num(m.expenses),
-    salary: num(m.salary_paid),
+    salary: num(emp ? m.salary_calculated : m.salary_paid),
     profit: num(m.profit),
   }));
 
   return (
     <>
       <PageHeader
-        title="Monthly summary"
-        description="Income, costs and profit per month, where a month is a salary period (Settings → Salary Cycle). Click an amount to see the payments behind it."
+        title={emp ? `Monthly summary · ${picked.length > 3 ? `${picked.length} selected` : picked.join(", ")}` : "Monthly summary"}
+        description={
+          emp
+            ? "Per employee: revenue credited to them, expenses tagged to them plus their share of split expenses, and salary earned. Not assigned: company income and expenses nobody carries. Several selected are added together."
+            : "Income, costs and profit per month, where a month is a salary period (Settings → Salary Cycle). Click an amount to see the payments behind it."
+        }
         actions={
           <>
-            <MonthsSelect value={periods} onChange={setPeriods} />
-            <ExportMenu path="/reports/monthly-summary" params={{ periods: String(periods) }} />
+            {financial && can("salary.read") && (
+              <div className="w-56">
+                <OwnerSelect value={selection} onChange={setSelection} />
+              </div>
+            )}
+            <MonthsSelect value={periods} onChange={setPeriods} options={[3, 6, 12, 24, 0]} />
+            <ExportMenu path="/reports/monthly-summary" params={{ periods: String(periods), ...params }} />
           </>
         }
       />
-      {q.isError ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : !r ? <TableSkeleton /> : rows.length === 0 ? (
+      {me.isError ? (
+        <EmptyState title="Your sign-in isn't linked to an employee" description="Ask an administrator to link your account to your employee record." />
+      ) : q.isError ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : !r ? <TableSkeleton /> : rows.length === 0 ? (
         <EmptyState title="No months yet" />
       ) : (
         <>
           <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatTile
-              label={last ? `Income · ${last.label}` : "Income"}
-              value={last ? formatAmount(last.income) : "—"}
+              label={`${L.income} · ${span}`}
+              value={formatAmount(total.income)}
               unit={base}
-              delta={last && <Delta current={num(last.income)} previous={before ? num(before.income) : null} />}
-              spark={<Sparkline values={trend((m) => m.income)} color={SERIES[0]} label="Income, last 6 months" />}
+              hint={soFar}
+              delta={prev && <Delta current={num(total.income)} previous={num(prev.income)} suffix={vsPrev} />}
+              spark={<Sparkline values={trend((m) => m.income)} color={SERIES[0]} label={`${L.income} per month, ${span}`} />}
             />
             <StatTile
-              label={last ? `Costs · ${last.label}` : "Costs"}
-              value={last ? formatAmount(costs(last)) : "—"}
+              label={`Costs · ${span}`}
+              value={formatAmount(total.costs)}
               unit={base}
-              hint="Expenses + salary paid"
-              delta={last && <Delta current={num(costs(last))} previous={before ? num(costs(before)) : null} goodWhenUp={false} />}
-              spark={<Sparkline values={trend(costs)} color={SERIES[1]} label="Costs, last 6 months" />}
+              hint={L.costsHint}
+              delta={prev && <Delta current={num(total.costs)} previous={num(prev.costs)} suffix={vsPrev} goodWhenUp={false} />}
+              spark={<Sparkline values={trend(cost)} color={SERIES[1]} label={`Costs per month, ${span}`} />}
             />
             <StatTile
-              label={last ? `Profit · ${last.label}` : "Profit"}
-              value={last ? formatAmount(last.profit) : "—"}
+              label={`${L.profit} · ${span}`}
+              value={formatAmount(total.profit)}
               unit={base}
-              tone={last && sign(last.profit) < 0 ? "bad" : undefined}
-              hint={last?.margin_pct ? `${last.margin_pct}% margin` : undefined}
-              delta={last && <Delta current={num(last.profit)} previous={before ? num(before.profit) : null} />}
-              spark={<Sparkline values={trend((m) => m.profit)} color={SERIES[3]} label="Profit, last 6 months" />}
+              tone={sign(total.profit) < 0 ? "bad" : undefined}
+              hint={margin !== null ? `${margin.toFixed(1)}% margin` : undefined}
+              delta={prev && <Delta current={num(total.profit)} previous={num(prev.profit)} suffix={vsPrev} />}
+              spark={<Sparkline values={trend((m) => m.profit)} color={SERIES[3]} label={`${L.profit} per month, ${span}`} />}
             />
             <StatTile
-              label={`Year to date · ${year}`}
-              value={formatAmount(ytdProfit)}
+              label={`Monthly average · ${span}`}
+              value={formatAmount((num(total.profit) / rows.length).toFixed(2))}
               unit={base}
-              tone={sign(ytdProfit) < 0 ? "bad" : undefined}
-              hint={`Profit on ${formatAmount(ytdIncome)} income · ${ytd.length} month${ytd.length === 1 ? "" : "s"}`}
+              tone={sign(total.profit) < 0 ? "bad" : undefined}
+              hint={`${L.profit} per month on ${formatAmount((num(total.income) / rows.length).toFixed(2))} ${L.income.toLowerCase()}`}
             />
           </div>
 
           <Card className="mb-6">
-            <CardHeader><CardTitle>Income, costs and profit</CardTitle></CardHeader>
+            <CardHeader><CardTitle>{L.income}, costs and {L.profit.toLowerCase()}</CardTitle></CardHeader>
             <CardContent>
               <PeriodChart
-                label="Income, expenses, salary and profit per month"
+                label={`${L.income}, expenses, salary and ${L.profit.toLowerCase()} per month`}
                 data={chartData}
                 unit={base}
                 bars={[
-                  { key: "income", label: "Income", color: SERIES[0] },
+                  { key: "income", label: L.income, color: SERIES[0] },
                   { key: "expenses", label: "Expenses", color: SERIES[1], stack: "cost" },
-                  { key: "salary", label: "Salary paid", color: SERIES[2], stack: "cost" },
+                  { key: "salary", label: L.salary, color: SERIES[2], stack: "cost" },
                 ]}
-                line={{ key: "profit", label: "Profit", color: SERIES[3] }}
+                line={{ key: "profit", label: L.profit, color: SERIES[3] }}
               />
               {rows.at(-1)?.in_progress && <p className="mt-2 text-xs text-muted-foreground">{rows.at(-1)!.label} is still in progress: its figures are so far.</p>}
             </CardContent>
@@ -127,35 +169,44 @@ export default function MonthlySummaryPage() {
               <THead>
                 <TR>
                   <TH>Month</TH>
-                  <TH className="text-right">Income</TH>
-                  <TH className="text-right">Expenses</TH>
-                  <TH className="text-right">Salary paid</TH>
-                  <TH className="text-right">Profit</TH>
+                  <TH className="text-right">{L.income}</TH>
+                  <TH className="text-right" title={emp ? "Employees: expenses tagged to them plus their share of split expenses. Not assigned: expenses nobody carries" : undefined}>Expenses</TH>
+                  <TH className="text-right" title={emp ? "Paid toward this month's salary, whenever it was paid" : undefined}>Salary paid</TH>
+                  <TH className="text-right" title={emp ? "Revenue − expenses − salary earned: what they leave the company" : undefined}>{L.profit}</TH>
                   <TH className="text-right">Margin</TH>
                   <TH className="text-right" title="Salary earned by employees in the month (paid or not)">Salary earned</TH>
-                  <TH className="text-right" title="Money that came into bank, cash and wallets">Cash in</TH>
-                  <TH className="text-right" title="Money that left bank, cash and wallets">Cash out</TH>
-                  <TH className="text-right" title="Bank, cash and wallets at the end of the month, as recorded">Closing cash</TH>
+                  {!emp && (
+                    <>
+                      <TH className="text-right" title="Money that came into bank, cash and wallets">Cash in</TH>
+                      <TH className="text-right" title="Money that left bank, cash and wallets">Cash out</TH>
+                      <TH className="text-right" title="Bank, cash and wallets at the end of the month, as recorded">Closing cash</TH>
+                    </>
+                  )}
                 </TR>
               </THead>
               <TBody>
                 {[...rows].reverse().map((row) => {
-                  const range = { from: row.start_date, to: row.end_date };
+                  const range = { from: row.start_date, to: row.end_date, employee_id: drillEmployee };
+                  const drillable = canDrill && (!emp || !!drillEmployee);
                   return (
                     <TR key={row.label}>
                       <TD className="whitespace-nowrap">
                         <span className="font-medium">{row.label}</span>{" "}
                         <span className="text-xs text-muted-foreground">{periodRange(row)}{row.in_progress ? " · so far" : row.status === "closed" ? " · closed" : ""}</span>
                       </TD>
-                      <TD className="tabular text-right"><DrillAmount value={row.income} drill={{ ...range, direction: "receive" }} /></TD>
-                      <TD className="tabular text-right"><DrillAmount value={row.expenses} drill={{ ...range, direction: "pay" }} /></TD>
+                      <TD className="tabular text-right">{drillable ? <DrillAmount value={row.income} drill={{ ...range, direction: "receive" }} /> : formatAmount(row.income)}</TD>
+                      <TD className="tabular text-right">{drillable ? <DrillAmount value={row.expenses} drill={{ ...range, direction: "pay" }} /> : formatAmount(row.expenses)}</TD>
                       <TD className="tabular text-right text-muted-foreground">{formatAmount(row.salary_paid)}</TD>
                       <TD className={cn("tabular text-right font-medium", sign(row.profit) < 0 && "text-destructive")}>{formatAmount(row.profit)}</TD>
                       <TD className="text-right"><Margin value={row.margin_pct} /></TD>
                       <TD className="tabular text-right">{formatAmount(row.salary_calculated)}</TD>
-                      <TD className="tabular text-right">{formatAmount(row.cash_in)}</TD>
-                      <TD className="tabular text-right">{formatAmount(row.cash_out)}</TD>
-                      <TD className={cn("tabular text-right", sign(row.closing_cash) < 0 && "text-destructive")}>{formatAmount(row.closing_cash)}</TD>
+                      {!emp && (
+                        <>
+                          <TD className="tabular text-right">{formatAmount(row.cash_in)}</TD>
+                          <TD className="tabular text-right">{formatAmount(row.cash_out)}</TD>
+                          <TD className={cn("tabular text-right", sign(row.closing_cash) < 0 && "text-destructive")}>{formatAmount(row.closing_cash)}</TD>
+                        </>
+                      )}
                     </TR>
                   );
                 })}
@@ -167,9 +218,13 @@ export default function MonthlySummaryPage() {
                   <TD className={cn("tabular text-right", sign(sum(rows.map((m) => m.profit))) < 0 && "text-destructive")}>{formatAmount(sum(rows.map((m) => m.profit)))}</TD>
                   <TD />
                   <TD className="tabular text-right">{formatAmount(sum(rows.map((m) => m.salary_calculated)))}</TD>
-                  <TD className="tabular text-right">{formatAmount(sum(rows.map((m) => m.cash_in)))}</TD>
-                  <TD className="tabular text-right">{formatAmount(sum(rows.map((m) => m.cash_out)))}</TD>
-                  <TD />
+                  {!emp && (
+                    <>
+                      <TD className="tabular text-right">{formatAmount(sum(rows.map((m) => m.cash_in)))}</TD>
+                      <TD className="tabular text-right">{formatAmount(sum(rows.map((m) => m.cash_out)))}</TD>
+                      <TD />
+                    </>
+                  )}
                 </TR>
               </TBody>
             </Table>

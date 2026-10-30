@@ -45,6 +45,28 @@ def _snapshot(a: Account) -> dict[str, Any]:
     }
 
 
+async def account_subtree(session: AsyncSession, account_ids: list[uuid.UUID]) -> list[uuid.UUID]:
+    """The accounts and, for groups, every account under them."""
+    for account_id in account_ids:
+        await get_account(session, account_id)
+    children: dict[uuid.UUID | None, list[uuid.UUID]] = {}
+    for aid, parent in (await session.execute(select(Account.id, Account.parent_id))).all():
+        children.setdefault(parent, []).append(aid)
+    out: set[uuid.UUID] = set()
+    todo = list(account_ids)
+    while todo:
+        aid = todo.pop()
+        if aid not in out:
+            out.add(aid)
+            todo.extend(children.get(aid, []))
+    return list(out)
+
+
+def entries_touching(account_ids: list[uuid.UUID]) -> Any:
+    """Subquery: journal entries with a line on any of these accounts."""
+    return select(JournalLine.journal_entry_id).where(JournalLine.account_id.in_(account_ids))
+
+
 async def get_account(session: AsyncSession, account_id: uuid.UUID, *, lock: bool = False) -> Account:
     stmt = select(Account).where(Account.id == account_id)
     if lock:

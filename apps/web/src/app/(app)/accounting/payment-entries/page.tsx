@@ -11,6 +11,7 @@ import { DataTable } from "@/components/erp/data-table";
 import { PageHeader } from "@/components/erp/page-header";
 import { EmptyState } from "@/components/erp/states";
 import { ExportMenu } from "@/components/erp/export-menu";
+import { MultiSelect } from "@/components/erp/multi-select";
 import { EmployeePicker, PartyPicker, PaymentAccountPicker } from "@/components/erp/pickers";
 import { StatusBadge } from "@/components/payments/entry-view";
 import { Button } from "@/components/ui/button";
@@ -18,9 +19,9 @@ import { Input, Select } from "@/components/ui/input";
 import { Card } from "@/components/ui/misc";
 import { api } from "@/lib/api";
 import { formatAmount, formatShort, sign } from "@/lib/money";
-import { currencyPrecision, useCurrencies, useEmployees, useParty, usePaymentAccounts } from "@/lib/queries";
+import { currencyPrecision, useAccounts, useCurrencies, useEmployees, useParty, usePaymentAccounts } from "@/lib/queries";
 import { useCan } from "@/lib/session";
-import type { Page, PaymentEntry } from "@/lib/types";
+import type { Account, Page, PaymentEntry } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 
 const PAGE_SIZE = 25;
@@ -28,11 +29,23 @@ const ICON = { receive: ArrowDownLeft, pay: ArrowUpRight, internal_transfer: Arr
 
 type Totals = { count: number; received: string; paid: string; transferred: string; base_currency: string };
 
-const EMPTY = { q: "", status: "submitted", direction: "", from: "", to: "", party_id: "", employee_id: "", payment_account_id: "" };
+const MONEY_TYPES: Record<string, string> = { bank: "bank", cash: "cash", crypto_wallet: "wallet", credit_card: "card" };
+
+/** Ledger accounts for the filter, in chart order with groups indented (links from the chart can name any). */
+function ledgerOptions(accounts: Account[], selected: string[]) {
+  const byId = new Map(accounts.map((a) => [a.id, a]));
+  const depth = (a: Account): number => (a.parent_id && byId.has(a.parent_id) ? 1 + depth(byId.get(a.parent_id)!) : 0);
+  return accounts
+    .filter((a) => a.is_active || selected.includes(a.id))
+    .sort((a, b) => a.code.localeCompare(b.code))
+    .map((a) => ({ value: a.id, label: `${a.code} · ${a.name}`, hint: a.is_group ? "group" : MONEY_TYPES[a.account_type], indent: depth(a) }));
+}
+
+const EMPTY = { q: "", status: "submitted", direction: "", from: "", to: "", party_id: "", employee_id: "", payment_account_id: "", account_ids: "" };
 
 function PaymentEntriesList() {
-  // ?employee_id=, ?party_id=, ?payment_account_id=, ?direction=, ?from=, ?to= open the list already filtered
-  // (links from employee, party and account pages, and from report figures).
+  // ?employee_id=, ?party_id=, ?payment_account_id=, ?account_ids=, ?direction=, ?from=, ?to= open the list
+  // already filtered (links from employee, party and account pages, and from report figures).
   const params = useSearchParams();
   const router = useRouter();
   const can = useCan();
@@ -47,10 +60,12 @@ function PaymentEntriesList() {
     party_id: params.get("party_id") ?? "",
     employee_id: params.get("employee_id") ?? "",
     payment_account_id: params.get("payment_account_id") ?? "",
+    account_ids: params.get("account_ids") ?? "",
   });
   const employees = useEmployees();
   const accounts = usePaymentAccounts(true);
-  const filtered = !!(filters.party_id || filters.employee_id || filters.payment_account_id || filters.q || filters.direction || filters.from || filters.to);
+  const ledger = useAccounts();
+  const filtered = !!(filters.party_id || filters.employee_id || filters.payment_account_id || filters.account_ids || filters.q || filters.direction || filters.from || filters.to);
   const setFilter = (k: keyof typeof filters, v: string) => {
     setFilters((f) => ({ ...f, [k]: v }));
     setPage(1);
@@ -68,6 +83,9 @@ function PaymentEntriesList() {
   });
   const who = employees.data?.find((e) => e.id === filters.employee_id)?.full_name;
   const where = accounts.data?.find((a) => a.id === filters.payment_account_id)?.name;
+  const ledgerIds = filters.account_ids ? filters.account_ids.split(",") : [];
+  const ledgerOpts = useMemo(() => ledgerOptions(ledger.data ?? [], ledgerIds), [ledger.data, filters.account_ids]); // eslint-disable-line react-hooks/exhaustive-deps
+  const booked = ledgerIds.length === 1 ? ledger.data?.find((a) => a.id === ledgerIds[0]) : undefined;
   const party = useParty(filters.party_id || null).data?.name;
 
   const columns = useMemo<ColumnDef<PaymentEntry, unknown>[]>(
@@ -208,7 +226,16 @@ function PaymentEntriesList() {
               <EmployeePicker id="f_employee" value={filters.employee_id || null} onChange={(v) => setFilter("employee_id", v ?? "")} placeholder="Any employee" />
             </div>
             <div className="md:w-56">
-              <PaymentAccountPicker id="f_account" value={filters.payment_account_id || null} onChange={(v) => setFilter("payment_account_id", v ?? "")} placeholder="Any account" />
+              <PaymentAccountPicker id="f_account" value={filters.payment_account_id || null} onChange={(v) => setFilter("payment_account_id", v ?? "")} placeholder="Any bank / cash account" />
+            </div>
+            <div className="md:w-64" title="Income, expense or other ledger accounts the payment is booked to (fees and FX lines count too). A payment matching any of them is shown; a group includes the accounts under it.">
+              <MultiSelect
+                options={ledgerOpts}
+                value={ledgerIds}
+                onChange={(v) => setFilter("account_ids", v.join(","))}
+                placeholder="Any ledger account"
+                noun="ledger accounts"
+              />
             </div>
             {filtered && (
               <Button variant="ghost" size="sm" onClick={() => { setFilters(EMPTY); setPage(1); }}><X /> Clear filters</Button>
@@ -222,6 +249,8 @@ function PaymentEntriesList() {
               {party && <> with {party}</>}
               {who && <> for {who}</>}
               {where && <> through {where}</>}
+              {booked && <> booked to {booked.code} {booked.name}{booked.is_group ? " (and the accounts under it)" : ""}</>}
+              {ledgerIds.length > 1 && <> booked to any of {ledgerIds.length} ledger accounts</>}
             </span>
             <span className="text-success">Received <span className="tabular">{formatAmount(totals.data.received)}</span></span>
             <span>Paid <span className="tabular">{formatAmount(totals.data.paid)}</span></span>

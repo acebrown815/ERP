@@ -123,7 +123,8 @@ export const NAV: NavSection[] = [
     label: "Reports",
     icon: BarChart3,
     items: [
-      { label: "Monthly Summary", href: "/reports/monthly", icon: CalendarClock, anyOf: ["reports.financial"] },
+      // Finance sees the company; anyone with salary.read sees their own months (or their teams').
+      { label: "Monthly Summary", href: "/reports/monthly", icon: CalendarClock, anyOf: ["reports.financial", "salary.read"] },
       { label: "Cash Flow & Runway", href: "/reports/cash-flow", icon: Banknote, anyOf: ["reports.financial"] },
       { label: "Customer Analysis", href: "/reports/customers", icon: Handshake, anyOf: ["reports.financial"] },
       { label: "Income & Expense Trends", href: "/reports/trends", icon: LineChart, anyOf: ["reports.financial"] },

@@ -328,6 +328,13 @@ async def test_employee_sees_only_their_own_salary(admin, finance, client_as, sc
     assert (await staff.get(f"{API}/comp-formulas")).status_code == 403
     assert (await staff.get(f"{API}/comp-assignments", params={"employee_id": mine})).status_code == 200
     assert (await staff.get(f"{API}/comp-assignments", params={"employee_id": scenario["a"]})).status_code == 403
+    # Monthly summary: their own months only; not the company, not unassigned, not a colleague.
+    monthly = f"{API}/reports/monthly-summary"
+    own = await staff.get(monthly, params={"employee_ids": mine})
+    assert own.status_code == 200 and D(own.json()["totals"]["income"]) == 5000
+    assert (await staff.get(monthly)).status_code == 403
+    assert (await staff.get(monthly, params={"employee_ids": mine, "unassigned": "true"})).status_code == 403
+    assert (await staff.get(monthly, params={"employee_ids": scenario["a"]})).status_code == 404
     assert (await staff.post(f"{API}/salary-periods/{nov['id']}/close")).status_code == 403
     report = (await staff.get(f"{API}/reports/employee-revenue")).json()
     assert [r["employee_name"] for r in report["rows"]] == ["Employee C"]
@@ -376,6 +383,46 @@ async def expense_body(employee_id: str, amount: str, on: str = "2026-11-12") ->
         "paid_from_payment_account_id": await payment_account_id("Company Checking"),
         "employee_id": employee_id,
     }
+
+
+async def test_split_expense_is_reports_only(finance, scenario) -> None:  # type: ignore[no-untyped-def]
+    await create_and_submit(finance, await receipt_body(party_id=scenario["customer"], project_id=scenario["project"]))
+    nov = await period(finance, "Nov 2026")
+    before = await board(finance, nov["id"])
+    # $1,000 software bill: 50% A, 30% B, the rest stays with the company.
+    body = {**await expense_body(scenario["a"], "1000"), "employee_id": None}
+    split = [{"employee_id": scenario["a"], "percent": "50"}, {"employee_id": scenario["b"], "percent": "30"}]
+    preview = (await finance.post(f"{PE}/preview", json={**body, "allocations": split})).json()
+    assert preview["ok"] and [D(a["amount"]) for a in preview["allocations"]] == [500, 300]
+    expense = await create_and_submit(finance, {**body, "allocations": split})
+    assert [(a["status"], D(a["amount"])) for a in expense["allocations"]] == [("active", 500), ("active", 300)]
+
+    # Salary is untouched: no expense against anyone's revenue.
+    after = await board(finance, nov["id"])
+    assert {k: (v["expenses"], v["calculated"]) for k, v in after.items()} == {
+        k: (v["expenses"], v["calculated"]) for k, v in before.items()
+    }
+    # Reports carry each share.
+    perf = (await finance.get(f"{API}/reports/employee-performance")).json()
+    a = next(r for r in perf["rows"] if r["employee_id"] == scenario["a"])
+    assert D(a["shared_expenses"]) == 500
+    assert D(a["contribution"]) == D(a["net_revenue"]) - D(a["salary"]) - 500
+    m = (await finance.get(f"{API}/reports/monthly-summary", params={"employee_ids": scenario["a"]})).json()
+    assert D(m["totals"]["shared_expenses"]) == 500 and D(m["totals"]["profit"]) == D(a["contribution"])
+    # The employee filter on payments finds the shared bill.
+    found = (await finance.get(PE, params={"employee_id": scenario["b"]})).json()
+    assert expense["id"] in [p["id"] for p in found["items"]]
+
+    # Cancelling removes the shares.
+    cancelled = await finance.post(f"{PE}/{expense['id']}/cancel", json={"reason": "wrong bill"}, headers=idem())
+    assert cancelled.status_code == 200
+    perf = (await finance.get(f"{API}/reports/employee-performance")).json()
+    assert all(D(r["shared_expenses"]) == 0 for r in perf["rows"])
+
+    # Tagged to one employee and split at once: refused.
+    both = await finance.post(PE, json={**body, "employee_id": scenario["a"], "allocations": split})
+    submit = await finance.post(f"{PE}/{both.json()['id']}/submit", headers=idem())
+    assert submit.status_code == 422
 
 
 async def test_employee_expenses_reduce_revenue_and_salary(admin, finance, scenario) -> None:  # type: ignore[no-untyped-def]

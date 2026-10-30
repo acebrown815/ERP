@@ -1966,6 +1966,7 @@ export interface paths {
         /**
          * Monthly Summary
          * @description Income, expenses, salary and profit per month, where a month is a salary period (Settings > Salary Cycle).
+         *     With `employee_ids` and/or `unassigned`: the same months for that selection (see _selection_months).
          */
         get: operations["monthly_summary_api_v1_reports_monthly_summary_get"];
         put?: never;
@@ -4626,6 +4627,11 @@ export interface components {
              */
             fees: string;
             /**
+             * Shared Expenses
+             * @default 0
+             */
+            shared_expenses: string;
+            /**
              * Fx Gain Loss
              * @default 0
              */
@@ -4658,6 +4664,21 @@ export interface components {
             /** Rows */
             rows: components["schemas"]["MonthRow"][];
             totals: components["schemas"]["MonthRow"] | null;
+            /**
+             * Employee Ids
+             * @default []
+             */
+            employee_ids: string[];
+            /**
+             * Employee Names
+             * @default []
+             */
+            employee_names: string[];
+            /**
+             * Unassigned
+             * @default false
+             */
+            unassigned: boolean;
         };
         /** MoveIn */
         MoveIn: {
@@ -5151,6 +5172,11 @@ export interface components {
             net_revenue: string;
             /** Salary */
             salary: string;
+            /**
+             * Shared Expenses
+             * @default 0
+             */
+            shared_expenses: string;
             /** Contribution */
             contribution: string;
             /** Salary Pct */
@@ -9327,6 +9353,8 @@ export interface operations {
                 to?: string | null;
                 q?: string | null;
                 employee_id?: string | null;
+                /** @description Comma-separated ledger accounts; a group includes its children */
+                account_ids?: string | null;
                 format?: "json" | "csv" | "xlsx" | "pdf";
                 page?: number;
                 page_size?: number;
@@ -9404,6 +9432,8 @@ export interface operations {
                 to?: string | null;
                 q?: string | null;
                 employee_id?: string | null;
+                /** @description Comma-separated ledger accounts; a group includes its children */
+                account_ids?: string | null;
             };
             header?: never;
             path?: never;
@@ -11353,7 +11383,11 @@ export interface operations {
     monthly_summary_api_v1_reports_monthly_summary_get: {
         parameters: {
             query?: {
+                /** @description 0 = all time */
                 periods?: number;
+                /** @description Comma-separated employee ids */
+                employee_ids?: string | null;
+                unassigned?: boolean;
                 format?: "json" | "csv" | "xlsx" | "pdf";
             };
             header?: never;

@@ -62,6 +62,41 @@ async def test_monthly_summary_margin_fees_and_cash(books) -> None:  # type: ign
     assert D(oct_["cash_in"]) == 4000 and D(oct_["closing_cash"]) == 4000
     assert D(nov["cash_in"]) == 10000 and D(nov["cash_out"]) == 1250 and D(nov["closing_cash"]) == 12750
     assert D(m["totals"]["closing_cash"]) == 12750
+    # periods=0: all time, from the first period on.
+    everything = (await books["finance"].get(f"{API}/reports/monthly-summary", params={"periods": 0})).json()
+    assert [r["label"] for r in everything["rows"]] == ["Oct 2026", "Nov 2026"]
+
+
+async def test_monthly_summary_for_one_employee(books) -> None:  # type: ignore[no-untyped-def]
+    finance = books["finance"]
+    m = (await finance.get(f"{API}/reports/monthly-summary", params={"periods": 2, "employee_ids": books["a"]})).json()
+    assert m["employee_ids"] == [books["a"]] and m["employee_names"] == ["Employee A"] and not m["unassigned"]
+    oct_, nov = m["rows"]
+    # Only the ABC receipt was on Employee A's project; the Old Co money in October is nobody's.
+    assert D(oct_["income"]) == 0 and D(nov["income"]) > 0
+    assert D(nov["profit"]) == D(nov["income"]) - D(nov["expenses"]) - D(nov["salary_calculated"])
+    assert D(nov["cash_in"]) == 0 and D(nov["closing_cash"]) == 0
+    perf = (await finance.get(f"{API}/reports/employee-performance")).json()
+    row = next(r for r in perf["rows"] if r["employee_id"] == books["a"])
+    assert D(m["totals"]["income"]) == D(row["gross_revenue"])
+    assert D(m["totals"]["profit"]) == D(row["contribution"])
+
+
+async def test_monthly_summary_employees_plus_unassigned_add_up(books) -> None:  # type: ignore[no-untyped-def]
+    finance = books["finance"]
+    url = f"{API}/reports/monthly-summary"
+    company = (await finance.get(url, params={"periods": 2})).json()
+    staff = [e["id"] for e in (await finance.get(f"{API}/employees", params={"limit": 200})).json()["items"]]
+    both = (await finance.get(url, params={"periods": 2, "employee_ids": ",".join(staff), "unassigned": "true"})).json()
+    for field in ("income", "expenses"):
+        assert D(both["totals"][field]) == D(company["totals"][field]), field
+    # Unassigned alone: the October receipt credited to nobody, the AWS bill and the fee.
+    rest = (await finance.get(url, params={"periods": 2, "unassigned": "true"})).json()
+    oct_, nov = rest["rows"]
+    assert D(oct_["income"]) == 4000 and D(nov["expenses"]) == 1250 and D(nov["fees"]) == 50
+    assert D(nov["salary_calculated"]) == 0 and D(nov["cash_in"]) == 0
+    bad = await finance.get(url, params={"employee_ids": "not-an-id"})
+    assert bad.status_code == 422
 
 
 async def test_cash_flow_runway_and_fees(books) -> None:  # type: ignore[no-untyped-def]

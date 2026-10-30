@@ -290,6 +290,20 @@ class ReconcileIn(BaseModel):
 # ---- payment entries: helpers ----------------------------------------------------------------------
 
 
+async def _ledger_accounts(session: AsyncSession, raw: str | None) -> list[uuid.UUID] | None:
+    """`account_ids` filter: the chosen accounts and everything under the groups among them."""
+    ids = []
+    for part in (raw or "").split(","):
+        if part.strip():
+            try:
+                ids.append(uuid.UUID(part.strip()))
+            except ValueError:
+                raise ValidationFailed(
+                    "Invalid account id", errors=[{"field": "account_ids", "message": f"Not an id: {part.strip()}"}]
+                ) from None
+    return await accounting.account_subtree(session, ids) if ids else None
+
+
 async def _allocations_out(
     session: AsyncSession, rows: list[Any], amounts: list[Decimal] | None = None
 ) -> list[AllocationOut]:
@@ -413,6 +427,20 @@ async def _preview(session: AsyncSession, pe: PaymentEntry, splits: list[Any]) -
                     "message": f"Split covers {out.allocated_total} of {result.eligible_amount_base}",
                 }
             )
+    elif pe.direction == "pay" and splits:
+        amounts = attribution.compute(splits, result.base_amount, base.precision)
+        out.allocations = await _allocations_out(session, splits, amounts)
+        out.allocated_total = sum(amounts, Decimal(0))
+        try:
+            service.check_expense_split(pe, result.rule)
+            if out.allocated_total > result.base_amount:
+                raise ValidationFailed(
+                    "Split exceeds payment",
+                    errors=[{"field": "allocations", "message": f"Split is more than {result.base_amount}"}],
+                )
+        except ValidationFailed as exc:
+            out.ok = False
+            out.errors.extend(exc.errors or [{"field": "allocations", "message": exc.detail}])
     return out
 
 
@@ -448,12 +476,16 @@ async def list_entries(
     date_to: date | None = Query(default=None, alias="to"),
     q: Annotated[str | None, Query(max_length=100)] = None,
     employee_id: uuid.UUID | None = None,
+    account_ids: Annotated[
+        str | None, Query(description="Comma-separated ledger accounts; a group includes its children")
+    ] = None,
     format: Format = "json",
     _: CurrentUser = ReadPayments,
     session: AsyncSession = Depends(get_session),
 ) -> Any:
     employee_party_id = (await employees.get(session, employee_id)).party_id if employee_id else None
     stmt = service.list_stmt(
+        account_ids=await _ledger_accounts(session, account_ids),
         employee_id=employee_id,
         employee_party_id=employee_party_id,
         status=status,
@@ -550,12 +582,16 @@ async def entry_totals(
     date_to: date | None = Query(default=None, alias="to"),
     q: Annotated[str | None, Query(max_length=100)] = None,
     employee_id: uuid.UUID | None = None,
+    account_ids: Annotated[
+        str | None, Query(description="Comma-separated ledger accounts; a group includes its children")
+    ] = None,
     _: CurrentUser = ReadPayments,
     session: AsyncSession = Depends(get_session),
 ) -> EntryTotalsOut:
     """Totals for the same filters as the list (what an employee or an account moved)."""
     employee_party_id = (await employees.get(session, employee_id)).party_id if employee_id else None
     stmt = service.list_stmt(
+        account_ids=await _ledger_accounts(session, account_ids),
         employee_id=employee_id,
         employee_party_id=employee_party_id,
         status=status,
@@ -601,7 +637,7 @@ async def preview_unsaved(
     pe = PaymentEntry(id=uuid.uuid4(), status="draft")
     await service.apply_fields(session, pe, body.model_dump(exclude={"allocations"}))
     rows = body.allocations
-    if rows is None and pe.project_id:  # same pre-fill a new draft gets (project default split)
+    if rows is None and pe.project_id and pe.direction == "receive":  # same pre-fill a new draft gets
         rows = [
             SplitRow(employee_id=s.employee_id, percent=s.percent, project_id=s.project_id)
             for s in await attribution.proposal(session, pe.project_id)

@@ -11,15 +11,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import lookup
 from app.core.db import get_session
+from app.core.errors import Forbidden, NotFound, ValidationFailed, field_error
 from app.core.exports import Format, export_response
 from app.modules.accounting import api as accounting
 from app.modules.attribution import api as attribution
-from app.modules.auth.api import CurrentUser, require
+from app.modules.auth.api import CurrentUser, current_user, require
 from app.modules.categories import api as categories
+from app.modules.employees import api as employees
 from app.modules.payments import api as payments
 from app.modules.projects import api as projects
 from app.modules.rbac.api import Scope
-from app.modules.reporting.periods import bucketer, pct, recent_periods
+from app.modules.reporting.periods import PeriodCol, bucketer, pct, recent_periods
 from app.modules.salary import api as salary
 from app.modules.settings import api as settings
 from app.modules.tasks import api as tasks
@@ -328,6 +330,7 @@ class MonthRow(BaseModel):
     salary_calculated: Decimal
     margin_pct: Decimal | None = None  # profit / income
     fees: Decimal = ZERO  # payment fees the company paid (included in expenses)
+    shared_expenses: Decimal = ZERO  # one employee: their share of split expenses (included in expenses)
     fx_gain_loss: Decimal = ZERO  # realized (included in income); negative = loss
     cash_in: Decimal = ZERO
     cash_out: Decimal = ZERO
@@ -339,17 +342,96 @@ class MonthlySummaryOut(BaseModel):
     base_currency: str
     rows: list[MonthRow]
     totals: MonthRow | None
+    # A selection (see _selection_months); none of these set = the whole company.
+    employee_ids: list[uuid.UUID] = []
+    employee_names: list[str] = []
+    unassigned: bool = False
 
 
-@router.get("/reports/monthly-summary", response_model=MonthlySummaryOut)
-async def monthly_summary(
-    periods: Annotated[int, Query(ge=1, le=36)] = 12,
-    format: Format = "json",
-    _: CurrentUser = Report,
-    session: AsyncSession = Depends(get_session),
-) -> Any:
-    """Income, expenses, salary and profit per month, where a month is a salary period (Settings > Salary Cycle)."""
-    cols, today = await recent_periods(session, periods)
+async def _check_salary_visible(session: AsyncSession, user: CurrentUser, employee_ids: list[uuid.UUID]) -> None:
+    """Same rule as the salary reports: everyone, or only yourself and your projects' teams."""
+    scope = user.scope_for("salary.read")
+    if scope is None:
+        raise Forbidden("You cannot see employee salary figures")
+    if scope != Scope.ALL:
+        own = await employees.for_user(session, user.id)
+        visible = {own.id} if own else set()
+        if scope == Scope.PROJECT:
+            visible |= await projects.team_ids(session, await projects.visible_project_ids(session, user))
+        if set(employee_ids) - visible:
+            raise NotFound("Employee not found")
+    for employee_id in employee_ids:
+        await employees.get(session, employee_id)
+
+
+def _parse_ids(raw: str | None) -> list[uuid.UUID]:
+    ids: list[uuid.UUID] = []
+    for part in (raw or "").split(","):
+        if not part.strip():
+            continue
+        try:
+            value = uuid.UUID(part.strip())
+        except ValueError:
+            raise ValidationFailed(
+                "Invalid employee id", errors=[field_error("employee_ids", f"Not an id: {part.strip()}")]
+            ) from None
+        if value not in ids:
+            ids.append(value)
+    return ids
+
+
+async def _selection_months(
+    session: AsyncSession, cols: list[PeriodCol], today: date, employee_ids: list[uuid.UUID], unassigned: bool
+) -> list[MonthRow]:
+    """Employees and/or the unassigned part of the company, summed per month.
+
+    An employee carries the revenue credited to them, the expenses tagged to them plus their share of split
+    expenses, and the salary they earned. Unassigned is what nobody carries: company income and expenses less
+    every employee's, with no salary (fees, overhead, unsplit receipts). Employees plus unassigned add up to the
+    company, except that salary counts as earned here and as paid in the company view. Cash stays zero."""
+    bal = await salary.balances(session, None if unassigned else employee_ids, until=today)
+    company = {r.period_id: r for r in await _company_months(session, cols, today)} if unassigned else {}
+    chosen = set(employee_ids)
+    rows = []
+    for p in cols:
+        lines = [line for b in bal.values() for line in b.lines if line.period.id == p.id]
+        mine = [line for line in lines if line.employee_id in chosen]
+        everyone_shared = await attribution.expense_totals(session, date_from=p.start_date, date_to=p.end_date)
+        shared = sum((v for e, v in everyone_shared.items() if e in chosen), ZERO)
+        income = sum((line.gross_revenue for line in mine), ZERO)
+        expenses = sum((line.expenses for line in mine), ZERO) + shared
+        earned = sum((line.calculated for line in mine), ZERO)
+        paid = sum((line.paid for line in mine), ZERO)  # paid toward this month, whenever it was paid
+        fees = fx = ZERO
+        if unassigned:
+            c = company[p.id]
+            income += c.income - sum((line.gross_revenue for line in lines), ZERO)
+            expenses += c.expenses - sum((line.expenses for line in lines), ZERO) - sum(everyone_shared.values(), ZERO)
+            fees, fx = c.fees, c.fx_gain_loss
+        profit = income - expenses - earned
+        rows.append(
+            MonthRow(
+                period_id=p.id,
+                label=p.label,
+                start_date=p.start_date,
+                end_date=p.end_date,
+                status=p.status,
+                income=income,
+                expenses=expenses,
+                salary_paid=paid,
+                profit=profit,
+                salary_calculated=earned,
+                margin_pct=pct(profit, income) if income > 0 else None,
+                fees=fees,
+                fx_gain_loss=fx,
+                shared_expenses=shared,
+                in_progress=p.in_progress,
+            )
+        )
+    return rows
+
+
+async def _company_months(session: AsyncSession, cols: list[PeriodCol], today: date) -> list[MonthRow]:
     at = bucketer(cols)
     n = len(cols)
     first, last = cols[0].start_date, cols[-1].end_date
@@ -413,6 +495,35 @@ async def monthly_summary(
                 in_progress=p.in_progress,
             )
         )
+    return rows
+
+
+@router.get("/reports/monthly-summary", response_model=MonthlySummaryOut)
+async def monthly_summary(
+    periods: Annotated[int, Query(ge=0, le=36, description="0 = all time")] = 12,
+    employee_ids: Annotated[str | None, Query(description="Comma-separated employee ids")] = None,
+    unassigned: bool = False,
+    format: Format = "json",
+    user: CurrentUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Any:
+    """Income, expenses, salary and profit per month, where a month is a salary period (Settings > Salary Cycle).
+    With `employee_ids` and/or `unassigned`: the same months for that selection (see _selection_months)."""
+    ids = _parse_ids(employee_ids)
+    # The company and its unassigned part need reports.financial; employees' own months need salary.read
+    # (an employee sees themselves, a project scope their teams).
+    if not user.can("reports.financial") and (not ids or unassigned):
+        raise Forbidden("Only your own months (or your teams') are available to you")
+    cols, today = await recent_periods(session, periods or None)
+    names: list[str] = []
+    if ids or unassigned:
+        if ids:
+            await _check_salary_visible(session, user, ids)
+            found = await employees.names(session, ids)
+            names = [found.get(i, "?") for i in ids]
+        rows = await _selection_months(session, cols, today, ids, unassigned)
+    else:
+        rows = await _company_months(session, cols, today)
     await session.commit()
     totals = None
     if rows:
@@ -428,6 +539,7 @@ async def monthly_summary(
             profit=sum((r.profit for r in rows), ZERO),
             salary_calculated=sum((r.salary_calculated for r in rows), ZERO),
             fees=sum((r.fees for r in rows), ZERO),
+            shared_expenses=sum((r.shared_expenses for r in rows), ZERO),
             fx_gain_loss=sum((r.fx_gain_loss for r in rows), ZERO),
             cash_in=sum((r.cash_in for r in rows), ZERO),
             cash_out=sum((r.cash_out for r in rows), ZERO),
@@ -435,9 +547,11 @@ async def monthly_summary(
         )
         totals.margin_pct = pct(totals.profit, totals.income) if totals.income > 0 else None
     if format != "json":
+        picked = [*names, *(["Not assigned"] if unassigned else [])]
+        who = f" - {', '.join(picked)}" if picked else ""
         return export_response(
             format,
-            "monthly-summary",
+            "monthly-summary-selection" if picked else "monthly-summary",
             [
                 "month",
                 "from",
@@ -471,9 +585,16 @@ async def monthly_summary(
                 ]
                 for r in [*rows, *([totals] if totals else [])]
             ],
-            title="Monthly summary (salary periods)",
+            title=f"Monthly summary (salary periods){who}",
         )
-    return MonthlySummaryOut(base_currency=(await settings.base_currency(session)).code, rows=rows, totals=totals)
+    return MonthlySummaryOut(
+        base_currency=(await settings.base_currency(session)).code,
+        rows=rows,
+        totals=totals,
+        employee_ids=ids,
+        employee_names=names,
+        unassigned=unassigned,
+    )
 
 
 # ---- company dashboard -----------------------------------------------------------------------------

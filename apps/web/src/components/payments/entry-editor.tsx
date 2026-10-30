@@ -208,6 +208,9 @@ export function PaymentEntryEditor({ entry, salary }: { entry?: PaymentEntry; sa
   const precision = currencyPrecision(currencies.data, currency);
   const purpose = purposes.data?.find((c) => c.id === form.purpose.category_id);
   const requiresSplit = !!purpose?.config?.requires_attribution;
+  // An expense can be tagged to one employee (lowers their salary) or split between several (reports only).
+  const splitPicked = splits.some((s) => s.employee_id);
+  const expenseSplit = form.direction === "pay" && purpose?.system_key !== "employee_salary" && !form.employee_id;
   const isTransfer = form.direction === "internal_transfer";
   const crossCurrency = isTransfer && dst && ours && dst.currency !== ours.currency;
 
@@ -237,7 +240,7 @@ export function PaymentEntryEditor({ entry, salary }: { entry?: PaymentEntry; sa
     if (!splitTouched && requiresSplit && form.project_id) void loadProjectDefault(form.project_id);
   }, [form.project_id, requiresSplit, splitTouched]);
 
-  const splitRows: SplitRow[] | null = requiresSplit
+  const splitRows: SplitRow[] | null = requiresSplit || expenseSplit
     ? splits
         .filter((s) => s.employee_id && isDecimal(s.value) && Number(s.value) > 0)
         .map((s) => ({
@@ -246,7 +249,9 @@ export function PaymentEntryEditor({ entry, salary }: { entry?: PaymentEntry; sa
           amount: mode === "amount" ? s.value : null,
           project_id: form.project_id,
         }))
-    : null;
+    : form.direction === "pay"
+      ? [] // tagged to one employee, or a salary payment: drop any split saved earlier
+      : null;
 
   const amountError =
     form.amount && (!isDecimal(form.amount) || Number(form.amount) <= 0)
@@ -555,8 +560,8 @@ export function PaymentEntryEditor({ entry, salary }: { entry?: PaymentEntry; sa
               <FormField id="project" label="Project" error={errors.project_id}>
                 <ProjectPicker id="project" value={form.project_id} onChange={(v) => set("project_id", v)} />
               </FormField>
-              {form.direction === "pay" && purpose?.system_key !== "employee_salary" && (
-                <FormField id="employee" label="Employee (optional tag)">
+              {form.direction === "pay" && purpose?.system_key !== "employee_salary" && !splitPicked && (
+                <FormField id="employee" label="Employee (optional tag)" hint="Lowers this employee's salary. To share the cost between several people for reports, leave empty and use the expense split below.">
                   <EmployeePicker id="employee" value={form.employee_id} onChange={(v) => set("employee_id", v)} />
                 </FormField>
               )}
@@ -564,8 +569,9 @@ export function PaymentEntryEditor({ entry, salary }: { entry?: PaymentEntry; sa
           </Card>
         )}
 
-        {requiresSplit && (
+        {(requiresSplit || expenseSplit) && (
           <AllocationEditor
+            kind={expenseSplit ? "expense" : "revenue"}
             mode={mode}
             onModeChange={(m) => {
               setSplitTouched(true);
@@ -577,7 +583,7 @@ export function PaymentEntryEditor({ entry, salary }: { entry?: PaymentEntry; sa
               setSplits(rows);
             }}
             computed={preview.data?.allocations}
-            eligible={preview.data?.eligible_amount_base}
+            eligible={expenseSplit ? preview.data?.base_amount : preview.data?.eligible_amount_base}
             baseCurrency={base}
             onUseProjectDefault={form.project_id ? () => void loadProjectDefault(form.project_id) : undefined}
             error={errors.allocations}
