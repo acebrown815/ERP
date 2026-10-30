@@ -27,7 +27,7 @@ from app.modules.settings import api as settings
 router = APIRouter(tags=["reports"])
 
 Report = Depends(require("reports.financial"))
-Financials = Depends(require("projects.read_financials", Scope.PROJECT))
+Financials = Depends(require("projects.read_financials", Scope.ALL))
 Periods = Annotated[int, Query(ge=2, le=36)]
 
 LAPSING_DAYS = 60

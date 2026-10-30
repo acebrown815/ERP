@@ -1905,7 +1905,7 @@ export interface paths {
         };
         /**
          * Project Profitability
-         * @description Every visible project's financials, most profitable first.
+         * @description Every project's financials, most profitable first.
          */
         get: operations["project_profitability_api_v1_reports_project_profitability_get"];
         put?: never;

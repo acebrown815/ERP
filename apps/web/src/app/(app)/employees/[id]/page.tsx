@@ -17,7 +17,7 @@ import { Input, Select } from "@/components/ui/input";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui/misc";
 import { api, ApiError } from "@/lib/api";
 import { useDepartments, useFormulas } from "@/lib/queries";
-import { useCan } from "@/lib/session";
+import { useCan, useMe } from "@/lib/session";
 import type { CompAssignment, Employee } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 
@@ -66,18 +66,21 @@ function ChangeFormula({ employee, onClose }: { employee: Employee; onClose: () 
 export default function EmployeePage() {
   const { id } = useParams<{ id: string }>();
   const can = useCan();
+  const me = useMe();
   const departments = useDepartments();
   const [changing, setChanging] = useState(false);
   const employee = useQuery({ queryKey: ["employee", id], queryFn: () => api.get<Employee>(`/employees/${id}`) });
   const assignments = useQuery({
     queryKey: ["comp-assignments", id],
     queryFn: () => api.get<CompAssignment[]>("/comp-assignments", { employee_id: id }),
-    enabled: can("comp_formulas.read"),
+    enabled: can("comp_formulas.read") && (me.permissions["comp_formulas.read"] === "all" || employee.data?.user_id === me.id),
     retry: false,
   });
   if (employee.isError) return <ErrorState error={employee.error} onRetry={() => employee.refetch()} />;
   const e = employee.data;
   if (!e) return <TableSkeleton />;
+  // Pay and revenue are private: your own record, or company-wide access (the API enforces this too).
+  const sees = (permission: string) => me.permissions[permission] === "all" || (permission in me.permissions && e.user_id === me.id);
   const dept = departments.data?.find((d) => d.id === e.department_id)?.name;
 
   return (
@@ -109,7 +112,7 @@ export default function EmployeePage() {
             </dl>
           </CardContent>
         </Card>
-        {can("comp_formulas.read") && (
+        {sees("comp_formulas.read") && (
           <Card>
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle>Salary formula</CardTitle>
@@ -134,7 +137,7 @@ export default function EmployeePage() {
           </Card>
         )}
       </div>
-      {can("salary.read") && <EmployeeSalaryView employeeId={e.id} path={`/employees/${e.id}/salary`} showRevenue={can("revenue.read")} />}
+      {sees("salary.read") && <EmployeeSalaryView employeeId={e.id} path={`/employees/${e.id}/salary`} showRevenue={sees("revenue.read")} />}
       {changing && <ChangeFormula employee={e} onClose={() => setChanging(false)} />}
     </>
   );

@@ -60,7 +60,7 @@ _DEFINITIONS: list[Permission] = [
     Permission("employees.read", "View employees", "People", SCOPED),
     Permission("employees.manage", "Manage employees", "People"),
     Permission("employees.read_compensation", "View compensation data", "People", (Scope.OWN, Scope.ALL)),
-    Permission("revenue.read", "View attributed revenue", "People", SCOPED),
+    Permission("revenue.read", "View attributed revenue", "People", (Scope.OWN, Scope.ALL)),
     Permission("comp_formulas.read", "View salary formulas", "People", (Scope.OWN, Scope.ALL)),
     Permission("comp_formulas.manage", "Manage salary formulas", "People"),
     Permission("salary.read", "View salary statements", "People", (Scope.OWN, Scope.ALL)),
@@ -71,7 +71,7 @@ _DEFINITIONS: list[Permission] = [
     # Delivery (Phase 4-5)
     Permission("projects.read", "View projects", "Projects", PROJECT_OR_ALL),
     Permission("projects.manage", "Manage projects", "Projects", PROJECT_OR_ALL),
-    Permission("projects.read_financials", "View project financials", "Projects", PROJECT_OR_ALL),
+    Permission("projects.read_financials", "View project financials", "Projects", ALL_ONLY),
     Permission("tasks.manage", "Manage tasks", "Projects", PROJECT_OR_ALL),
     Permission("tasks.update_own", "Update own tasks", "Projects", SCOPED),
     Permission("calendar.manage.company", "Manage company calendar", "Calendar"),

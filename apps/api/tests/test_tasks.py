@@ -209,3 +209,24 @@ async def test_project_financials_and_salary_cost_per_project(admin, client_as: 
     assert report[0]["number"] == f["number"]
     staff = setup["staff"]
     assert (await staff.get(f"{API}/projects/{p}/financials")).status_code == 403  # employees don't see financials
+
+
+async def test_project_manager_sees_only_own_money(admin, client_as: ClientFactory) -> None:  # type: ignore[no-untyped-def]
+    """A project manager sees their own revenue, never a teammate's, and no whole-project financials."""
+    finance = await client_as("finance_manager")
+    pm = await client_as("project_manager")
+    abc = await customer("Customer PM")
+    mine = await employee("Manager M", user_id=pm.user_id)
+    other = await employee("Teammate T")
+    p = await project("PM Project", abc, [(mine, D(50)), (other, D(50))], manager_id=mine)
+    await create_and_submit(finance, await receipt_body(party_id=abc, project_id=p))
+
+    report = (await pm.get(f"{API}/reports/employee-revenue")).json()
+    assert [r["employee_name"] for r in report["rows"]] == ["Manager M"]
+    assert (await pm.get(f"{API}/employees/{mine}/revenue")).status_code == 200
+    assert (await pm.get(f"{API}/employees/{other}/revenue")).status_code == 404
+    for path in (f"/projects/{p}/financials", f"/projects/{p}/financials/trend", "/reports/project-profitability"):
+        assert (await pm.get(f"{API}{path}")).status_code == 403, path
+    # Finance still sees everyone.
+    names = {r["employee_name"] for r in (await finance.get(f"{API}/reports/employee-revenue")).json()["rows"]}
+    assert {"Manager M", "Teammate T"} <= names

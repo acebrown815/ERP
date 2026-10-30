@@ -29,7 +29,7 @@ from app.modules.tasks import api as tasks
 router = APIRouter(tags=["reports"])
 
 ZERO = Decimal(0)
-Financials = Depends(require("projects.read_financials", Scope.PROJECT))
+Financials = Depends(require("projects.read_financials", Scope.ALL))
 
 
 class ProjectFinancialsOut(BaseModel):
@@ -144,11 +144,8 @@ async def project_profitability(
     user: CurrentUser = Financials,
     session: AsyncSession = Depends(get_session),
 ) -> Any:
-    """Every visible project's financials, most profitable first."""
-    only = None
-    if user.scope_for("projects.read_financials") != Scope.ALL:
-        only = await projects.visible_project_ids(session, user)
-    stmt = projects.list_stmt(q=None, status=status, customer_party_id=None, only_ids=only)
+    """Every project's financials, most profitable first."""
+    stmt = projects.list_stmt(q=None, status=status, customer_party_id=None, only_ids=None)
     rows = list((await session.execute(stmt.limit(500))).scalars())
     out = sorted(await _financials(session, rows, date_from, date_to), key=lambda r: -r.profit_cash)
     await session.commit()
