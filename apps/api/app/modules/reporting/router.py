@@ -15,7 +15,7 @@ from app.core.errors import Forbidden, NotFound, ValidationFailed, field_error
 from app.core.exports import Format, export_response
 from app.modules.accounting import api as accounting
 from app.modules.attribution import api as attribution
-from app.modules.auth.api import CurrentUser, current_user, require
+from app.modules.auth.api import CurrentUser, current_user, require, require_any
 from app.modules.categories import api as categories
 from app.modules.employees import api as employees
 from app.modules.payments import api as payments
@@ -173,6 +173,33 @@ async def project_profitability(
         ]
         return export_response(format, "project-profitability", fields, ([getattr(r, f) for f in fields] for r in out))
     return out
+
+
+class MyProjectRow(BaseModel):
+    project_id: uuid.UUID
+    received: Decimal  # receipts on the project credited to them (their share)
+    paid: Decimal  # payments on the project to them or for them (salary, expenses tagged or shared: their share)
+    net: Decimal  # received - paid
+    payments: int
+    base_currency: str
+
+
+@router.get("/reports/my-project-contribution", response_model=list[MyProjectRow])
+async def my_project_contribution(
+    user: CurrentUser = Depends(require_any("salary.read", "revenue.read")),
+    session: AsyncSession = Depends(get_session),
+) -> list[MyProjectRow]:
+    """The signed-in employee's payments per project, summed as they see them in Payment Entries (employees
+    don't see project totals)."""
+    own = await employees.for_user(session, user.id)
+    if own is None:
+        raise NotFound("Your user is not linked to an employee record")
+    totals = await payments.employee_project_totals(session, employee_id=own.id, employee_party_id=own.party_id)
+    base = (await settings.base_currency(session)).code
+    return [
+        MyProjectRow(project_id=p, received=received, paid=paid, net=received - paid, payments=n, base_currency=base)
+        for p, (received, paid, n) in totals.items()
+    ]
 
 
 # ---- income / expense by category ------------------------------------------------------------------

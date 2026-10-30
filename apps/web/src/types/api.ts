@@ -1916,6 +1916,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/reports/my-project-contribution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Project Contribution
+         * @description The signed-in employee's payments per project, summed as they see them in Payment Entries (employees
+         *     don't see project totals).
+         */
+        get: operations["my_project_contribution_api_v1_reports_my_project_contribution_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/reports/by-category": {
         parameters: {
             query?: never;
@@ -3592,6 +3613,8 @@ export interface components {
         };
         /** EntryOut */
         EntryOut: {
+            /** My Share */
+            my_share?: string | null;
             /**
              * Id
              * Format: uuid
@@ -4693,6 +4716,24 @@ export interface components {
             before_id?: string | null;
             /** After Id */
             after_id?: string | null;
+        };
+        /** MyProjectRow */
+        MyProjectRow: {
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Received */
+            received: string;
+            /** Paid */
+            paid: string;
+            /** Net */
+            net: string;
+            /** Payments */
+            payments: number;
+            /** Base Currency */
+            base_currency: string;
         };
         /** NotificationOut */
         NotificationOut: {
@@ -11308,6 +11349,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_project_contribution_api_v1_reports_my_project_contribution_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyProjectRow"][];
                 };
             };
         };

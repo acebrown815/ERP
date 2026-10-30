@@ -31,10 +31,11 @@ export function useAccounts(enabled = true) {
   return useQuery({ queryKey: ["accounts"], queryFn: () => api.get<Account[]>("/accounts"), enabled });
 }
 
-export function usePaymentAccounts(includeInactive = false) {
+export function usePaymentAccounts(includeInactive = false, enabled = true) {
   return useQuery({
     queryKey: ["payment-accounts", includeInactive],
     queryFn: () => api.get<PaymentAccount[]>("/payment-accounts", { include_inactive: includeInactive }),
+    enabled,
   });
 }
 

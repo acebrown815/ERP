@@ -75,7 +75,8 @@ export function PaymentEntryView({ entry }: { entry: PaymentEntry }) {
   const can = useCan();
   const company = useCompany();
   const currencies = useCurrencies();
-  const accounts = usePaymentAccounts(true);
+  const seesLedger = can("journals.post") || can("reports.financial");
+  const accounts = usePaymentAccounts(true, can("payments.create") || can("reports.financial"));
   const methods = useCategories("payment_method", true);
   const purposes = useCategories("payment_purpose", true);
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -133,10 +134,22 @@ export function PaymentEntryView({ entry }: { entry: PaymentEntry }) {
               <p className="text-sm text-muted-foreground">
                 {direction} on {formatDate(entry.posting_date)}
               </p>
-              <p className="tabular text-3xl font-semibold tracking-tight">
-                {formatAmount(entry.amount, precision)} <span className="text-lg text-muted-foreground">{entry.currency}</span>
-              </p>
-              {entry.currency !== base && entry.base_amount && (
+              {entry.my_share != null ? (
+                // Employee view of a payment split between employees: their share is what matters to them.
+                <>
+                  <p className="tabular text-3xl font-semibold tracking-tight">
+                    {formatAmount(entry.my_share)} <span className="text-lg text-muted-foreground">{base}</span>
+                  </p>
+                  <p className="tabular text-sm text-muted-foreground">
+                    Your share of {formatAmount(entry.amount, precision)} {entry.currency}
+                  </p>
+                </>
+              ) : (
+                <p className="tabular text-3xl font-semibold tracking-tight">
+                  {formatAmount(entry.amount, precision)} <span className="text-lg text-muted-foreground">{entry.currency}</span>
+                </p>
+              )}
+              {entry.my_share == null && entry.currency !== base && entry.base_amount && (
                 <p className="tabular text-sm text-muted-foreground">
                   = {formatAmount(entry.base_amount)} {base} at {(entry.exchange_rate ?? "").replace(/\.?0+$/, "")}
                 </p>
@@ -237,8 +250,9 @@ export function PaymentEntryView({ entry }: { entry: PaymentEntry }) {
             )}
           </CardContent>
         </Card>
-        {entry.journal_entry_id && <JournalTable id={entry.journal_entry_id} title="Ledger entry" />}
-        {entry.reversal_journal_entry_id && <JournalTable id={entry.reversal_journal_entry_id} title="Reversal" />}
+        {/* The ledger is for finance; employees reading their own payments don't get it. */}
+        {seesLedger && entry.journal_entry_id && <JournalTable id={entry.journal_entry_id} title="Ledger entry" />}
+        {seesLedger && entry.reversal_journal_entry_id && <JournalTable id={entry.reversal_journal_entry_id} title="Reversal" />}
       </div>
 
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>

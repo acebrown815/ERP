@@ -549,7 +549,8 @@ async def test_drafts_and_permissions(admin, client_as: ClientFactory, scenario)
 
     for role in ("project_manager", "employee"):
         c = await client_as(role)
-        assert (await c.get(PE)).status_code == 403
+        # They may read the payments about themselves, but this login isn't linked to an employee.
+        assert (await c.get(PE)).status_code == 404
         assert (await c.post(PE, json=await receipt_body())).status_code == 403
     fm = await client_as("finance_manager")
     done = await create_and_submit(

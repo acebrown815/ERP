@@ -192,6 +192,27 @@ async def get(session: AsyncSession, pe_id: uuid.UUID, *, lock: bool = False) ->
     return pe
 
 
+async def involves(
+    session: AsyncSession, pe_id: uuid.UUID, *, employee_id: uuid.UUID, employee_party_id: uuid.UUID | None
+) -> bool:
+    """Whether a payment is about this employee (the same rule as the employee filter of the list)."""
+    stmt = list_stmt(
+        status=None,
+        direction=None,
+        party_id=None,
+        project_id=None,
+        payment_account_id=None,
+        method_category_id=None,
+        purpose_category_id=None,
+        date_from=None,
+        date_to=None,
+        q=None,
+        employee_id=employee_id,
+        employee_party_id=employee_party_id,
+    ).where(PaymentEntry.id == pe_id)
+    return (await session.execute(stmt.limit(1))).first() is not None
+
+
 def list_stmt(
     *,
     status: str | None,
@@ -674,14 +695,62 @@ async def fee_totals(
     return [(name, cur, by, n, t or Decimal(0)) for name, cur, by, n, t in rows.all()]
 
 
-async def totals(session: AsyncSession, stmt: Select[tuple[PaymentEntry]]) -> dict[str, Any]:
-    """Count and base-currency totals of a filtered list (submitted entries only count toward money)."""
+async def employee_project_totals(
+    session: AsyncSession, *, employee_id: uuid.UUID, employee_party_id: uuid.UUID | None
+) -> dict[uuid.UUID, tuple[Decimal, Decimal, int]]:
+    """One employee's submitted payments per project, as they see them in the list (revenue split to them,
+    salary paid to them, expenses tagged to or shared with them; a split payment with their share only):
+    {project_id: (received, paid, number of payments)}."""
+    stmt = list_stmt(
+        status="submitted",
+        direction=None,
+        party_id=None,
+        project_id=None,
+        payment_account_id=None,
+        method_category_id=None,
+        purpose_category_id=None,
+        date_from=None,
+        date_to=None,
+        q=None,
+        employee_id=employee_id,
+        employee_party_id=employee_party_id,
+    ).where(PaymentEntry.project_id.is_not(None))
     sub = stmt.order_by(None).subquery()
+    share = attribution.employee_shares(employee_id)
     rows = await session.execute(
-        select(sub.c.direction, sub.c.status, func.count(), func.sum(sub.c.base_amount)).group_by(
-            sub.c.direction, sub.c.status
+        select(
+            sub.c.project_id,
+            sub.c.direction,
+            func.sum(func.coalesce(share.c.amount_base, sub.c.base_amount)),
+            func.count(),
         )
+        .select_from(sub.outerjoin(share, share.c.payment_entry_id == sub.c.id))
+        .group_by(sub.c.project_id, sub.c.direction)
     )
+    out: dict[uuid.UUID, tuple[Decimal, Decimal, int]] = {}
+    for project_id, direction, amount, n in rows.all():
+        received, paid, count = out.get(project_id, (Decimal(0), Decimal(0), 0))
+        if direction == "receive":
+            received += amount or 0
+        elif direction == "pay":
+            paid += amount or 0
+        out[project_id] = (received, paid, count + n)
+    return out
+
+
+async def totals(
+    session: AsyncSession, stmt: Select[tuple[PaymentEntry]], *, share_of: uuid.UUID | None = None
+) -> dict[str, Any]:
+    """Count and base-currency totals of a filtered list (submitted entries only count toward money).
+    With `share_of`: a payment split between employees counts with that employee's share only."""
+    sub = stmt.order_by(None).subquery()
+    amount = sub.c.base_amount
+    query = select(sub.c.direction, sub.c.status, func.count())
+    if share_of:
+        share = attribution.employee_shares(share_of)
+        amount = func.coalesce(share.c.amount_base, sub.c.base_amount)
+        query = query.select_from(sub.outerjoin(share, share.c.payment_entry_id == sub.c.id))
+    rows = await session.execute(query.add_columns(func.sum(amount)).group_by(sub.c.direction, sub.c.status))
     out: dict[str, Any] = {"count": 0, "received": Decimal(0), "paid": Decimal(0), "transferred": Decimal(0)}
     for direction, status, n, total in rows.all():
         out["count"] += n

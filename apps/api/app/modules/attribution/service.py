@@ -310,6 +310,15 @@ async def for_payments(session: AsyncSession, payment_ids: list[uuid.UUID]) -> d
     return out
 
 
+def employee_shares(employee_id: uuid.UUID) -> Any:
+    """Subquery (payment_entry_id, amount_base): one employee's active share of split payments, either kind."""
+    return (
+        select(RevenueAllocation.payment_entry_id, RevenueAllocation.amount_base)
+        .where(RevenueAllocation.employee_id == employee_id, RevenueAllocation.status == "active")
+        .subquery()
+    )
+
+
 def payment_ids_for_employee(employee_id: uuid.UUID) -> Any:
     """Subquery: payments whose split credits `employee_id` (draft or active)."""
     return select(RevenueAllocation.payment_entry_id).where(

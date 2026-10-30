@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import lookup
 from app.core.db import get_session
-from app.core.errors import ValidationFailed
+from app.core.errors import NotFound, ValidationFailed
 from app.core.exports import Format, export_response
 from app.core.idempotency import run_idempotent
 from app.core.pagination import Page, PageParams, page_params, paginate
@@ -27,6 +27,8 @@ Direction = Literal["receive", "pay", "internal_transfer"]
 Quantity = Annotated[Decimal, Field(max_digits=38, decimal_places=18)]
 Rate = Annotated[Decimal, Field(gt=0, max_digits=30, decimal_places=12)]
 ReadPayments = Depends(require_any("payments.create", "reports.financial"))
+# Employees (own salary or revenue) may read the payments that involve them; see _own_employee.
+ReadOwnPayments = Depends(require_any("payments.create", "reports.financial", "salary.read", "revenue.read"))
 
 
 # ---- payment accounts ------------------------------------------------------------------------------
@@ -206,6 +208,8 @@ class AllocationOut(BaseModel):
 class EntryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    # Employee view only: their share of a payment split between employees (base currency).
+    my_share: Decimal | None = None
     id: uuid.UUID
     number: str
     posting_date: date
@@ -322,7 +326,20 @@ async def _allocations_out(
     ]
 
 
-async def _entry_out(session: AsyncSession, pe: PaymentEntry, *, refresh: bool = False) -> EntryOut:
+async def _own_employee(session: AsyncSession, user: CurrentUser) -> Any:
+    """None when the user reads every payment; otherwise their employee record, the only one whose payments
+    (revenue split to them, salary paid to them, expenses tagged to or shared with them) they may see."""
+    if user.can("payments.create") or user.can("reports.financial"):
+        return None
+    own = await employees.for_user(session, user.id)
+    if own is None:
+        raise NotFound("Your user is not linked to an employee record")
+    return own
+
+
+async def _entry_out(
+    session: AsyncSession, pe: PaymentEntry, *, refresh: bool = False, only_employee: uuid.UUID | None = None
+) -> EntryOut:
     if refresh:  # after a write: return stored values (database scale), not in-memory ones
         await session.flush()
         await session.refresh(pe)
@@ -331,7 +348,9 @@ async def _entry_out(session: AsyncSession, pe: PaymentEntry, *, refresh: bool =
     projects = await lookup.resolve(session, "project", [pe.project_id])
     periods = await lookup.resolve(session, "salary_period", [pe.salary_period_id])
     employee_names = await lookup.resolve(session, "employee", [pe.employee_id])
-    rows = await attribution.for_payment(session, pe.id)
+    rows = [
+        r for r in await attribution.for_payment(session, pe.id) if not only_employee or r.employee_id == only_employee
+    ]
     return out.model_copy(
         update={
             "party_name": parties.get(pe.party_id) if pe.party_id else None,
@@ -339,11 +358,14 @@ async def _entry_out(session: AsyncSession, pe: PaymentEntry, *, refresh: bool =
             "salary_period_label": periods.get(pe.salary_period_id) if pe.salary_period_id else None,
             "employee_name": employee_names.get(pe.employee_id) if pe.employee_id else None,
             "allocations": await _allocations_out(session, rows),
+            "my_share": rows[0].amount_base if only_employee and rows else None,
         }
     )
 
 
-async def _entries_out(session: AsyncSession, entries: list[PaymentEntry]) -> list[EntryOut]:
+async def _entries_out(
+    session: AsyncSession, entries: list[PaymentEntry], *, only_employee: uuid.UUID | None = None
+) -> list[EntryOut]:
     """List pages: the same as _entry_out, with every name and split loaded in a handful of queries."""
     parties = await lookup.resolve(session, "party", (e.party_id for e in entries))
     project_names = await lookup.resolve(session, "project", (e.project_id for e in entries))
@@ -367,6 +389,7 @@ async def _entries_out(session: AsyncSession, entries: list[PaymentEntry]) -> li
                 status=a.status,
             )
             for a in splits.get(e.id, [])
+            if not only_employee or a.employee_id == only_employee  # not colleagues' shares
         ]
         out.append(
             EntryOut.model_validate(e).model_copy(
@@ -376,6 +399,7 @@ async def _entries_out(session: AsyncSession, entries: list[PaymentEntry]) -> li
                     "salary_period_label": periods.get(e.salary_period_id) if e.salary_period_id else None,
                     "employee_name": people.get(e.employee_id) if e.employee_id else None,
                     "allocations": allocations,
+                    "my_share": allocations[0].amount if only_employee and allocations else None,
                 }
             )
         )
@@ -480,9 +504,12 @@ async def list_entries(
         str | None, Query(description="Comma-separated ledger accounts; a group includes its children")
     ] = None,
     format: Format = "json",
-    _: CurrentUser = ReadPayments,
+    user: CurrentUser = ReadOwnPayments,
     session: AsyncSession = Depends(get_session),
 ) -> Any:
+    own = await _own_employee(session, user)
+    if own:
+        employee_id = own.id
     employee_party_id = (await employees.get(session, employee_id)).party_id if employee_id else None
     stmt = service.list_stmt(
         account_ids=await _ledger_accounts(session, account_ids),
@@ -505,7 +532,9 @@ async def list_entries(
         projects = await lookup.resolve(session, "project", (r.project_id for r in rows))
         splits: dict[uuid.UUID, list[str]] = {}
         for r in rows:
-            allocations = await attribution.for_payment(session, r.id)
+            allocations = [
+                a for a in await attribution.for_payment(session, r.id) if not own or a.employee_id == own.id
+            ]
             if allocations:
                 names = await lookup.resolve(session, "employee", (a.employee_id for a in allocations))
                 splits[r.id] = [
@@ -515,6 +544,17 @@ async def list_entries(
                     for a in allocations
                 ]
         tagged = await lookup.resolve(session, "employee", (r.employee_id for r in rows))
+        # Employee view: what each payment means for them (their share of a split one).
+        mine = (
+            {
+                r.id: a.amount_base
+                for r in rows
+                for a in await attribution.for_payment(session, r.id)
+                if a.employee_id == own.id
+            }
+            if own
+            else {}
+        )
         header = [
             "number",
             "posting_date",
@@ -530,6 +570,7 @@ async def list_entries(
             "fee_paid_by",
             "reference_no",
             "description",
+            *(["your_share"] if own else []),
         ]
         return export_response(
             format,
@@ -551,13 +592,17 @@ async def list_entries(
                     r.fee_paid_by,
                     r.reference_no,
                     r.description,
+                    *([mine.get(r.id, r.base_amount)] if own else []),
                 ]
                 for r in rows
             ),
         )
     rows, total = await paginate(session, stmt, params)
     return Page(
-        items=await _entries_out(session, list(rows)), total=total, page=params.page, page_size=params.page_size
+        items=await _entries_out(session, list(rows), only_employee=own.id if own else None),
+        total=total,
+        page=params.page,
+        page_size=params.page_size,
     )
 
 
@@ -585,10 +630,13 @@ async def entry_totals(
     account_ids: Annotated[
         str | None, Query(description="Comma-separated ledger accounts; a group includes its children")
     ] = None,
-    _: CurrentUser = ReadPayments,
+    user: CurrentUser = ReadOwnPayments,
     session: AsyncSession = Depends(get_session),
 ) -> EntryTotalsOut:
     """Totals for the same filters as the list (what an employee or an account moved)."""
+    own = await _own_employee(session, user)
+    if own:
+        employee_id = own.id
     employee_party_id = (await employees.get(session, employee_id)).party_id if employee_id else None
     stmt = service.list_stmt(
         account_ids=await _ledger_accounts(session, account_ids),
@@ -605,7 +653,7 @@ async def entry_totals(
         date_to=date_to,
         q=q,
     )
-    t = await service.totals(session, stmt)
+    t = await service.totals(session, stmt, share_of=own.id if own else None)
     return EntryTotalsOut(**t, base_currency=(await settings.base_currency(session)).code)
 
 
@@ -650,9 +698,13 @@ async def preview_unsaved(
 
 @router.get("/payment-entries/{pe_id}", response_model=EntryOut)
 async def get_entry(
-    pe_id: uuid.UUID, _: CurrentUser = ReadPayments, session: AsyncSession = Depends(get_session)
+    pe_id: uuid.UUID, user: CurrentUser = ReadOwnPayments, session: AsyncSession = Depends(get_session)
 ) -> EntryOut:
-    return await _entry_out(session, await service.get(session, pe_id))
+    pe = await service.get(session, pe_id)
+    own = await _own_employee(session, user)
+    if own and not await service.involves(session, pe.id, employee_id=own.id, employee_party_id=own.party_id):
+        raise NotFound("Payment entry not found")
+    return await _entry_out(session, pe, only_employee=own.id if own else None)
 
 
 @router.get("/payment-entries/{pe_id}/preview", response_model=PaymentPreviewOut)

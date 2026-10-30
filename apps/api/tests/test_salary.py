@@ -335,6 +335,60 @@ async def test_employee_sees_only_their_own_salary(admin, finance, client_as, sc
     assert (await staff.get(monthly)).status_code == 403
     assert (await staff.get(monthly, params={"employee_ids": mine, "unassigned": "true"})).status_code == 403
     assert (await staff.get(monthly, params={"employee_ids": scenario["a"]})).status_code == 404
+    # Payment entries: read-only, only the ones about them, without colleagues' shares.
+    others = await create_and_submit(
+        finance, await receipt_body(party_id=scenario["customer"], project_id=scenario["project"])
+    )
+    listed = (await staff.get(PE, params={"employee_id": scenario["a"]})).json()[
+        "items"
+    ]  # their own, whatever is asked
+    assert len(listed) == 1 and [a["employee_id"] for a in listed[0]["allocations"]] == [mine]
+    assert (await staff.get(f"{PE}/{listed[0]['id']}")).status_code == 200
+    assert (await staff.get(f"{PE}/{others['id']}")).status_code == 404
+    totals = (await staff.get(f"{PE}/totals")).json()
+    assert totals["count"] == 1
+    # Shared payments show and count with their share only: 50% of the receipt, 30% of a shared bill.
+    assert D(listed[0]["my_share"]) == 5000 and D(totals["received"]) == 5000
+    bill = {**await expense_body(scenario["a"], "1000"), "employee_id": None}
+    shared = await create_and_submit(
+        finance,
+        {
+            **bill,
+            "allocations": [{"employee_id": mine, "percent": "30"}, {"employee_id": scenario["a"], "percent": "70"}],
+        },
+    )
+    seen = (await staff.get(f"{PE}/{shared['id']}")).json()
+    assert D(seen["my_share"]) == 300 and [a["employee_id"] for a in seen["allocations"]] == [mine]
+    totals = (await staff.get(f"{PE}/totals")).json()
+    assert totals["count"] == 2 and D(totals["paid"]) == 300
+    assert (await finance.get(f"{PE}/{shared['id']}")).json()["my_share"] is None  # finance sees whole amounts
+    # Projects: their own payments per project, never the project's totals.
+    await create_and_submit(
+        finance,
+        await receipt_body(
+            party_id=scenario["customer"],
+            project_id=scenario["project"],
+            allocations=[{"employee_id": mine, "percent": "100"}],
+        ),
+    )
+    rows = (await staff.get(f"{API}/reports/my-project-contribution")).json()
+    row = next(r for r in rows if r["project_id"] == scenario["project"])
+    # The sum of their payment entries on the project, as listed for them: the receipt credited 100% to them.
+    assert (D(row["received"]), D(row["paid"]), D(row["net"]), row["payments"]) == (10000, 0, 10000, 1)
+    # A 1,000 bill on the project shared 30% to them: 300 paid, not 1,000.
+    await create_and_submit(
+        finance,
+        {
+            **bill,
+            "project_id": scenario["project"],
+            "allocations": [{"employee_id": mine, "percent": "30"}, {"employee_id": scenario["a"], "percent": "70"}],
+        },
+    )
+    rows = (await staff.get(f"{API}/reports/my-project-contribution")).json()
+    row = next(r for r in rows if r["project_id"] == scenario["project"])
+    assert (D(row["paid"]), D(row["net"]), row["payments"]) == (300, 9700, 2)
+    assert (await staff.get(f"{API}/reports/project-profitability")).status_code == 403
+    assert (await staff.post(PE, json={})).status_code == 403
     assert (await staff.post(f"{API}/salary-periods/{nov['id']}/close")).status_code == 403
     report = (await staff.get(f"{API}/reports/employee-revenue")).json()
     assert [r["employee_name"] for r in report["rows"]] == ["Employee C"]

@@ -3,6 +3,7 @@
 from app.modules.payments.models import PaymentAccount, PaymentEntry
 from app.modules.payments.service import (
     create_payment_account,
+    employee_project_totals,
     fee_totals,
     party_daily_totals,
     party_first_last,
@@ -14,6 +15,7 @@ __all__ = [
     "PaymentAccount",
     "PaymentEntry",
     "create_payment_account",
+    "employee_project_totals",
     "fee_totals",
     "party_daily_totals",
     "party_first_last",

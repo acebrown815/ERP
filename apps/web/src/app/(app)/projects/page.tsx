@@ -16,14 +16,19 @@ import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { Badge, Card } from "@/components/ui/misc";
 import { api } from "@/lib/api";
-import { formatAmount } from "@/lib/money";
+import { formatAmount, sign } from "@/lib/money";
 import { useEmployees } from "@/lib/queries";
-import { useCan } from "@/lib/session";
-import type { Page, Project, TaskProgress } from "@/lib/types";
-import { formatDate } from "@/lib/utils";
+import { useCan, useMe } from "@/lib/session";
+import type { Page, Project, ProjectFinancials, TaskProgress } from "@/lib/types";
+
+type MyProjectRow = { project_id: string; received: string; paid: string; net: string; payments: number; base_currency: string };
+import { cn, formatDate } from "@/lib/utils";
 
 export default function ProjectsPage() {
   const can = useCan();
+  // Whole-project profit only for those who see every project's financials (finance, admin). Everyone else,
+  // project managers included, sees what their own payments on each project come to.
+  const allFinancials = useMe().permissions["projects.read_financials"] === "all";
   const employees = useEmployees();
   const types = useCategories("project_type", true);
   const [page, setPage] = useState(1);
@@ -43,6 +48,20 @@ export default function ProjectsPage() {
       return api.get<TaskProgress[]>(`/tasks/progress?${qs}`);
     },
     enabled: ids.length > 0,
+  });
+  // Profit per project (base currency, cash basis), for those who may see project financials.
+  const financials = useQuery({
+    queryKey: ["project-profitability", status],
+    queryFn: () => api.get<ProjectFinancials[]>("/reports/project-profitability", { status }),
+    enabled: allFinancials,
+    placeholderData: keepPreviousData,
+  });
+  const mineOnly = !allFinancials && (can("salary.read") || can("revenue.read"));
+  const mine = useQuery({
+    queryKey: ["my-project-contribution"],
+    queryFn: () => api.get<MyProjectRow[]>("/reports/my-project-contribution"),
+    enabled: mineOnly,
+    retry: false,
   });
   const name = (id: string | null | undefined) => employees.data?.find((e) => e.id === id)?.full_name;
   const columns = useMemo<ColumnDef<Project, unknown>[]>(
@@ -84,6 +103,58 @@ export default function ProjectsPage() {
           <span className="tabular block text-right">{row.original.contract_value ? `${formatAmount(row.original.contract_value)} ${row.original.currency}` : "—"}</span>
         ),
       },
+      ...(allFinancials
+        ? [
+            {
+              id: "profit",
+              header: () => (
+                <span className="block text-right" title="Revenue received − direct expenses − salary paid (base currency, cash basis)">
+                  Profit
+                </span>
+              ),
+              cell: ({ row }: { row: { original: Project } }) => {
+                const f = financials.data?.find((x) => x.project_id === row.original.id);
+                if (!f) return <span className="block text-right text-muted-foreground">{financials.isLoading ? "…" : "—"}</span>;
+                return (
+                  <div className="tabular text-right">
+                    <span className={cn("font-medium", sign(f.profit_cash) < 0 && "text-destructive")}>
+                      {formatAmount(f.profit_cash)} {f.base_currency}
+                    </span>
+                    <p className="text-xs text-muted-foreground">
+                      on {formatAmount(f.revenue)}
+                      {f.margin_pct !== null && f.margin_pct !== undefined && ` · ${f.margin_pct}%`}
+                    </p>
+                  </div>
+                );
+              },
+            } satisfies ColumnDef<Project, unknown>,
+          ]
+        : mineOnly
+          ? [
+              {
+                id: "mine",
+                header: () => (
+                  <span className="block text-right" title="Your payment entries on the project: received (your share) − paid to you or for you (salary, expenses tagged to or shared with you)">
+                    Your net
+                  </span>
+                ),
+                cell: ({ row }: { row: { original: Project } }) => {
+                  const m = mine.data?.find((x) => x.project_id === row.original.id);
+                  if (!m) return <span className="block text-right text-muted-foreground">{mine.isLoading ? "…" : "—"}</span>;
+                  return (
+                    <Link href={`/accounting/payment-entries?project_id=${m.project_id}`} className="tabular block text-right hover:underline" title="Show these payments">
+                      <span className={cn("font-medium", sign(m.net) < 0 && "text-destructive")}>
+                        {formatAmount(m.net)} {m.base_currency}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {formatAmount(m.received)} in · {formatAmount(m.paid)} out · {m.payments} payment{m.payments === 1 ? "" : "s"}
+                      </span>
+                    </Link>
+                  );
+                },
+              } satisfies ColumnDef<Project, unknown>,
+            ]
+          : []),
       { accessorKey: "deadline", header: "Deadline", cell: ({ row }) => formatDate(row.original.deadline) },
       {
         accessorKey: "status",
@@ -91,7 +162,7 @@ export default function ProjectsPage() {
         cell: ({ row }) => <Badge variant={PROJECT_STATUS[row.original.status]?.variant}>{PROJECT_STATUS[row.original.status]?.label}</Badge>,
       },
     ],
-    [types.data, employees.data, progress.data], // eslint-disable-line react-hooks/exhaustive-deps
+    [types.data, employees.data, progress.data, financials.data, mine.data], // eslint-disable-line react-hooks/exhaustive-deps
   );
   return (
     <>

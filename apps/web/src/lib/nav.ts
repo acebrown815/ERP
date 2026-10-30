@@ -74,7 +74,8 @@ export const NAV: NavSection[] = [
     label: "Accounting",
     icon: Calculator,
     items: [
-      { label: "Payment Entries", href: "/accounting/payment-entries", icon: ArrowLeftRight, anyOf: ["payments.create", "reports.financial"] },
+      // Employees see the payments about themselves (read-only).
+      { label: "Payment Entries", href: "/accounting/payment-entries", icon: ArrowLeftRight, anyOf: ["payments.create", "reports.financial", "salary.read", "revenue.read"] },
       { label: "Journal Entries", href: "/accounting/journal-entries", icon: NotebookPen, anyOf: ["journals.post", "reports.financial"] },
       { label: "Chart of Accounts", href: "/accounting/chart-of-accounts", icon: ListTree, anyOf: ["accounts.read"] },
       { label: "General Ledger", href: "/accounting/general-ledger", icon: BookOpenText, anyOf: ["reports.financial"] },

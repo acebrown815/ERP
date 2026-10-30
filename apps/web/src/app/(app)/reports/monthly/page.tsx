@@ -53,7 +53,7 @@ export default function MonthlySummaryPage() {
   const picked = r ? [...r.employee_names, ...(r.unassigned ? ["Not assigned"] : [])] : [];
   // Payments can be filtered to one employee only.
   const drillEmployee = r && r.employee_ids.length === 1 && !r.unassigned ? r.employee_ids[0] : null;
-  const canDrill = can("payments.create") || financial; // who can open Payment Entries
+  const canDrill = financial || ["payments.create", "salary.read", "revenue.read"].some(can); // who can open Payment Entries
   const cost = (m: Month) => costs(m, emp);
   const L = emp
     ? { income: "Revenue", profit: "Contribution", salary: "Salary earned", costsHint: "Expenses + salary earned" }

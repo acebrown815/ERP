@@ -19,7 +19,7 @@ import { Input, Select } from "@/components/ui/input";
 import { Card } from "@/components/ui/misc";
 import { api } from "@/lib/api";
 import { formatAmount, formatShort, sign } from "@/lib/money";
-import { currencyPrecision, useAccounts, useCurrencies, useEmployees, useParty, usePaymentAccounts } from "@/lib/queries";
+import { currencyPrecision, useAccounts, useCompany, useCurrencies, useEmployees, useParty, usePaymentAccounts } from "@/lib/queries";
 import { useCan } from "@/lib/session";
 import type { Account, Page, PaymentEntry } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
@@ -41,15 +41,16 @@ function ledgerOptions(accounts: Account[], selected: string[]) {
     .map((a) => ({ value: a.id, label: `${a.code} · ${a.name}`, hint: a.is_group ? "group" : MONEY_TYPES[a.account_type], indent: depth(a) }));
 }
 
-const EMPTY = { q: "", status: "submitted", direction: "", from: "", to: "", party_id: "", employee_id: "", payment_account_id: "", account_ids: "" };
+const EMPTY = { q: "", status: "submitted", direction: "", from: "", to: "", party_id: "", employee_id: "", payment_account_id: "", account_ids: "", project_id: "" };
 
 function PaymentEntriesList() {
-  // ?employee_id=, ?party_id=, ?payment_account_id=, ?account_ids=, ?direction=, ?from=, ?to= open the list
+  // ?employee_id=, ?party_id=, ?payment_account_id=, ?account_ids=, ?project_id=, ?direction=, ?from=, ?to= open the list
   // already filtered (links from employee, party and account pages, and from report figures).
   const params = useSearchParams();
   const router = useRouter();
   const can = useCan();
   const currencies = useCurrencies();
+  const base = useCompany().data?.base_currency ?? "";
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState({
     ...EMPTY,
@@ -61,11 +62,15 @@ function PaymentEntriesList() {
     employee_id: params.get("employee_id") ?? "",
     payment_account_id: params.get("payment_account_id") ?? "",
     account_ids: params.get("account_ids") ?? "",
+    project_id: params.get("project_id") ?? "", // from the projects list (no picker of its own)
   });
-  const employees = useEmployees();
-  const accounts = usePaymentAccounts(true);
-  const ledger = useAccounts();
-  const filtered = !!(filters.party_id || filters.employee_id || filters.payment_account_id || filters.account_ids || filters.q || filters.direction || filters.from || filters.to);
+  // Without payments.create or reports.financial (an employee): only the payments about themselves,
+  // read-only, so the filters that need company lookups are hidden.
+  const ownOnly = !can("payments.create") && !can("reports.financial");
+  const employees = useEmployees(!ownOnly);
+  const accounts = usePaymentAccounts(true, !ownOnly);
+  const ledger = useAccounts(!ownOnly);
+  const filtered = !!(filters.party_id || filters.employee_id || filters.payment_account_id || filters.account_ids || filters.project_id || filters.q || filters.direction || filters.from || filters.to);
   const setFilter = (k: keyof typeof filters, v: string) => {
     setFilters((f) => ({ ...f, [k]: v }));
     setPage(1);
@@ -154,10 +159,22 @@ function PaymentEntriesList() {
       {
         id: "amount",
         header: () => <span className="block text-right">Amount</span>,
-        accessorFn: (e) => Number(e.base_amount ?? e.amount),
+        accessorFn: (e) => Number(e.my_share ?? e.base_amount ?? e.amount),
         cell: ({ row }) => {
           const e = row.original;
           const out = e.direction === "pay";
+          if (e.my_share != null) {
+            // Employee view of a shared payment: their share (base currency), with the whole amount below.
+            return (
+              <span className={`tabular block text-right ${out ? "" : "text-success"}`}>
+                {out ? "−" : ""}
+                {formatShort(e.my_share)} {base}
+                <span className="block text-xs text-muted-foreground">
+                  your share of {formatShort(e.amount, currencyPrecision(currencies.data, e.currency))} {e.currency}
+                </span>
+              </span>
+            );
+          }
           return (
             <span className={`tabular block text-right ${out ? "" : e.direction === "receive" ? "text-success" : ""}`}>
               {out ? "−" : ""}
@@ -168,7 +185,7 @@ function PaymentEntriesList() {
       },
       { accessorKey: "status", header: "Status", cell: ({ row }) => <StatusBadge status={row.original.status} /> },
     ],
-    [currencies.data],
+    [currencies.data, base],
   );
 
 
@@ -176,7 +193,11 @@ function PaymentEntriesList() {
     <>
       <PageHeader
         title="Payment entries"
-        description="Every payment received, paid or moved between our accounts. Submitting a payment posts it to the ledger."
+        description={
+          ownOnly
+            ? "Payments about you: revenue credited to you, salary paid to you, and expenses tagged to or shared with you."
+            : "Every payment received, paid or moved between our accounts. Submitting a payment posts it to the ledger."
+        }
         actions={
           <>
             <ExportMenu path="/payment-entries" params={filters} />
@@ -218,6 +239,8 @@ function PaymentEntriesList() {
             </div>
           </div>
           <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
+            {!ownOnly && (
+            <>
             <div className="md:w-64">
               <PartyPicker id="f_party" kinds={["customer", "supplier", "other"]} value={filters.party_id || null}
                 onChange={(v) => setFilter("party_id", v ?? "")} placeholder="Any customer or supplier" />
@@ -237,6 +260,8 @@ function PaymentEntriesList() {
                 noun="ledger accounts"
               />
             </div>
+            </>
+            )}
             {filtered && (
               <Button variant="ghost" size="sm" onClick={() => { setFilters(EMPTY); setPage(1); }}><X /> Clear filters</Button>
             )}
@@ -249,13 +274,17 @@ function PaymentEntriesList() {
               {party && <> with {party}</>}
               {who && <> for {who}</>}
               {where && <> through {where}</>}
+              {filters.project_id && <> on the chosen project</>}
               {booked && <> booked to {booked.code} {booked.name}{booked.is_group ? " (and the accounts under it)" : ""}</>}
               {ledgerIds.length > 1 && <> booked to any of {ledgerIds.length} ledger accounts</>}
             </span>
             <span className="text-success">Received <span className="tabular">{formatAmount(totals.data.received)}</span></span>
             <span>Paid <span className="tabular">{formatAmount(totals.data.paid)}</span></span>
             {sign(totals.data.transferred) !== 0 && <span className="text-muted-foreground">Transfers <span className="tabular">{formatAmount(totals.data.transferred)}</span></span>}
-            <span className="text-xs text-muted-foreground">{totals.data.base_currency}, submitted only{who ? " · includes revenue split to them, salary paid to them and expenses tagged to them" : ""}</span>
+            <span className="text-xs text-muted-foreground">
+              {totals.data.base_currency}, submitted only
+              {ownOnly ? " · shared payments count with your share" : who ? " · includes revenue split to them, salary paid to them and expenses tagged to or shared with them" : ""}
+            </span>
           </div>
         )}
         <DataTable
