@@ -15,6 +15,7 @@ os.environ["ERP_DATABASE_URL"] = TEST_DB_URL
 os.environ["ERP_FAST_PASSWORD_HASHING"] = "true"
 os.environ["ERP_ENV"] = "test"
 os.environ["ERP_ATTACHMENTS_DIR"] = tempfile.mkdtemp(prefix="erp-attachments-")
+os.environ["ERP_BACKUPS_DIR"] = tempfile.mkdtemp(prefix="erp-backups-")
 
 import httpx  # noqa: E402
 import pytest  # noqa: E402

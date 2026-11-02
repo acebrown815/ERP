@@ -1255,6 +1255,7 @@ Each role grant has a scope: `own` (the user's own employee record), `project` (
 | `calendar.manage:team`, `leave.approve` | all | — | project/department | — |
 | `reports.financial` | all | all | — | — |
 | `audit.read` | all | finance entities | — | — |
+| `backups.manage` | all | — | — | — |
 
 ### 15.3 Enforcement
 

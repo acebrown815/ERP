@@ -2,7 +2,8 @@
 
 - processes the transactional outbox continuously
 - every minute: calendar reminders and "due today" task notices
-- nightly (after 02:00 company time): consistency checks; administrators are notified of any failure
+- nightly (after 02:00 company time): consistency checks; administrators are notified of any failure;
+  then an automatic backup (Settings → Backups), removing automatic ones older than ERP_BACKUPS_KEEP_DAYS
 """
 
 import asyncio
@@ -18,6 +19,7 @@ from app.core.db import SessionLocal, engine
 from app.core.logging import configure_logging
 from app.core.outbox import process_batch
 from app.models import import_all_models
+from app.modules.backups import api as backups
 
 log = structlog.get_logger()
 
@@ -89,6 +91,10 @@ async def run() -> None:
                 await nightly_checks_job()
             except Exception:
                 log.exception("worker.checks_failed")
+            try:
+                await backups.nightly()
+            except Exception:
+                log.exception("worker.backup_failed")
         if handled == 0:
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(stop.wait(), timeout=settings.worker_poll_seconds)

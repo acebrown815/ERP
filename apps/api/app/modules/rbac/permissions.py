@@ -37,6 +37,7 @@ _DEFINITIONS: list[Permission] = [
     Permission("roles.manage", "Manage roles and permissions", "Administration"),
     Permission("imports.manage", "Run data imports", "Administration"),
     Permission("audit.read", "Read audit log", "Administration"),
+    Permission("backups.manage", "Create, download and restore backups", "Administration"),
     Permission("currencies.manage", "Manage currencies and exchange rates", "Administration"),
     # Categories
     Permission("categories.manage.finance", "Manage finance categories", "Categories"),

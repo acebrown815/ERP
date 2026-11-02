@@ -138,6 +138,35 @@ External monitoring: point an uptime checker at `https://chonryong.com/api/healt
 
 ## Backups
 
+There are two independent kinds of backup:
+
+| | App backups (Settings → Backups) | Database dumps (`backup` service) |
+|---|---|---|
+| Made by | The worker every night, or **Back up now** | The `backup` container daily at `BACKUP_HOUR` |
+| Contains | All business data and attachment files (not sign-in sessions) | The whole database |
+| Format | `.zip` (`apps/api/app/modules/backups/archive.py`) | PostgreSQL custom format `.dump` |
+| Restore | In the app, by an Administrator | By hand with `restore.sh` (below) |
+| Volume | `app_backups` | `backups` |
+
+Both keep nightly copies `BACKUP_KEEP_DAYS` days.
+
+### App backups
+
+**Settings → Backups** (Administrators, permission `backups.manage`) lists every backup and can make one now, download one, upload one from another installation, delete one, and restore one.
+
+Restoring asks for your password, then runs in the background:
+
+1. The current data is saved as a "Before restore" backup.
+2. The file is loaded into a scratch database `erp_incoming`, built at the backup's schema version and then migrated to the current one.
+3. The consistency checks run on it (as in Settings → System Checks). If any fails, the restore stops and nothing is changed.
+4. The scratch database replaces `erp`. The site is unavailable for a few seconds and everyone is signed out.
+
+The restore is recorded in the audit log of the restored data (`backup.restored`), as are backups started, uploaded, downloaded and deleted. A backup from a newer app version (a schema this version doesn't know) is refused: upgrade first. Uploads are limited to 2 GB (`infra/Caddyfile`). Restore needs the database user to be a superuser, which the `erp` user in the compose stack is.
+
+**Moving data to another installation** (for example from a local copy to production): on the source, **Back up now** and **Download**; on the target, **Upload backup** and **Restore**. Both should run the same app version, or the target a newer one.
+
+### Database dumps
+
 The `backup` service writes `erp_<UTC timestamp>.dump` (PostgreSQL custom format) daily at `BACKUP_HOUR` (UTC) and once at start-up, checks that each dump is readable, and deletes dumps older than `BACKUP_KEEP_DAYS`.
 
 Take one now:
@@ -152,7 +181,7 @@ docker compose -f infra/docker-compose.yml --env-file .env exec backup sh /backu
 docker run --rm -v erp_backups:/b -v /mnt/offsite:/o alpine sh -c 'cp -n /b/*.dump /o/'
 ```
 
-(or `rclone`/`aws s3 sync` from the volume path). Uploaded files (attachments) live in the `attachments` volume; back that up the same way.
+(or `rclone`/`aws s3 sync` from the volume path). Uploaded files (attachments) live in the `attachments` volume; back that up the same way. App backups are in the `erp_app_backups` volume and already include attachments.
 
 ## Restore drill (do it monthly)
 

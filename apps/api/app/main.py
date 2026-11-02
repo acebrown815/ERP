@@ -19,6 +19,7 @@ from app.modules.audit import setup as audit_setup
 from app.modules.audit.router import router as audit_router
 from app.modules.auth import setup as auth_setup
 from app.modules.auth.router import auth_router, users_router
+from app.modules.backups.router import router as backups_router
 from app.modules.calendar.router import router as calendar_router
 from app.modules.categories.router import router as categories_router
 from app.modules.compensation import setup as compensation_setup
@@ -93,6 +94,7 @@ ROUTERS = (
     analytics_router,
     calendar_router,
     system_router,
+    backups_router,
 )
 
 

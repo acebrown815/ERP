@@ -14,6 +14,8 @@ How to set up and run the ERP day to day. For servers, backups and monitoring se
 8. **Employees and departments** (Employees → Directory), then **salary formulas** (Employees → Salary Formulas) and assign each employee a formula.
 9. **Opening balances** (Accounting → Journal Entries → Opening balances) if you are moving from another system. Customers, suppliers, employees and projects can be imported (Settings → Data Import).
 
+**Backups** (Settings → Backups): a backup is made every night. Download one now and then and keep it off the server. Restoring a backup replaces all data; the data before the restore is kept as a "Before restore" backup. To move everything from one installation to another, back up and download on the old one, then upload and restore on the new one.
+
 ## 2. Every day
 
 - **Record payments** (Accounting → Payment Entries → New payment). Customer payments can be split between employees (optional; if you split, it must cover 100%). Expenses can be tagged to an employee (it reduces their revenue) or a project.

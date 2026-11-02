@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     attachments_dir: str = "./var/attachments"
     attachments_max_bytes: int = 25 * 1024 * 1024
 
+    backups_dir: str = "./var/backups"
+    backups_keep_days: int = 14  # nightly automatic backups only; others stay until deleted
+    backups_max_upload_bytes: int = 2 * 1024 * 1024 * 1024
+
     log_json: bool = False
     log_level: str = "INFO"
 

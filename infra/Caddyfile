@@ -10,6 +10,14 @@
 		-Server
 	}
 
+	# Backup files uploaded in Settings → Backups can be large.
+	handle /api/v1/backups/upload {
+		request_body {
+			max_size 2GB
+		}
+		reverse_proxy api:8000
+	}
+
 	# API and the web app share one origin, so session cookies need no CORS.
 	handle /api/* {
 		request_body {

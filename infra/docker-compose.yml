@@ -26,6 +26,7 @@ services:
       ERP_DATABASE_URL: postgresql+asyncpg://erp:${POSTGRES_PASSWORD}@postgres:5432/erp
       ERP_COOKIE_SECURE: ${ERP_COOKIE_SECURE:-true}
       ERP_LOG_JSON: "true"
+      ERP_BACKUPS_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
     depends_on:
       postgres:
         condition: service_healthy
@@ -36,6 +37,7 @@ services:
     environment: *api-env
     volumes:
       - attachments:/data/attachments
+      - app_backups:/data/backups    # Settings → Backups (restore swaps the database from here)
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -47,10 +49,13 @@ services:
     restart: unless-stopped
 
   worker:
-    # Outbox events, calendar reminders (every minute), nightly consistency checks.
+    # Outbox events, calendar reminders (every minute), nightly consistency checks and app backup.
     build: ../apps/api
     command: ["python", "-m", "app.worker"]
     environment: *api-env
+    volumes:
+      - attachments:/data/attachments
+      - app_backups:/data/backups
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -105,3 +110,4 @@ volumes:
   attachments:
   caddy_data:
   backups:
+  app_backups:
