@@ -63,9 +63,9 @@ API tests use a real PostgreSQL database because triggers and constraints are pa
 ```bash
 cp .env.example .env          # set POSTGRES_PASSWORD; ERP_DOMAIN is chonryong.com
 docker compose -f infra/docker-compose.yml --env-file .env up -d --build
-docker compose -f infra/docker-compose.yml exec api python -m app.cli seed --company "ChonRyong Inc"
+docker compose -f infra/docker-compose.yml --env-file .env exec api python -m app.cli seed --company "ChonRyong Inc"
 openssl rand -base64 24       # administrator password; keep it in a password manager
-docker compose -f infra/docker-compose.yml exec api python -m app.cli create-admin --email admin@chonryong.com --name "Administrator"   # prompts for it
+docker compose -f infra/docker-compose.yml --env-file .env exec api python -m app.cli create-admin --email admin@chonryong.com --name "Administrator"   # prompts for it
 ```
 
 Caddy terminates TLS for `ERP_DOMAIN` (www redirects to it) and routes `/api` to the API and everything else to the web app. Migrations run automatically on start (`migrate` service).

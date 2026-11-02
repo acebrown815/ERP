@@ -1,6 +1,6 @@
 # Full stack: docker compose -f infra/docker-compose.yml --env-file .env up --build
-# First run:   docker compose -f infra/docker-compose.yml exec api python -m app.cli seed --company "Your Co"
-#              docker compose -f infra/docker-compose.yml exec -e ERP_ADMIN_PASSWORD=... api python -m app.cli create-admin --email you@company.com
+# First run:   docker compose -f infra/docker-compose.yml --env-file .env exec api python -m app.cli seed --company "Your Co"
+#              docker compose -f infra/docker-compose.yml --env-file .env exec -e ERP_ADMIN_PASSWORD=... api python -m app.cli create-admin --email you@company.com
 name: erp
 
 services:

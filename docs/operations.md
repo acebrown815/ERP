@@ -57,16 +57,22 @@ As `deploy` (the GitHub deploy key is set up in [Continuous deployment](#continu
 
 ```bash
 git clone git@github.com:acebrown815/ERP.git ~/erp && cd ~/erp
-cp .env.example .env            # set POSTGRES_PASSWORD (long, random: openssl rand -base64 32); ERP_DOMAIN is chonryong.com
+cp .env.example .env            # set POSTGRES_PASSWORD (openssl rand -hex 32; hex, as it goes into the database URL); ERP_DOMAIN is chonryong.com
 chmod 600 .env
 bash infra/deploy.sh
-docker compose -f infra/docker-compose.yml exec api python -m app.cli seed --company "ChonRyong Inc"
+docker compose -f infra/docker-compose.yml --env-file .env exec api python -m app.cli seed --company "ChonRyong Inc"
 
 openssl rand -base64 24         # the administrator password: save it in a password manager now
-docker compose -f infra/docker-compose.yml exec api python -m app.cli create-admin --email admin@chonryong.com --name "Administrator"
+docker compose -f infra/docker-compose.yml --env-file .env exec api python -m app.cli create-admin --email admin@chonryong.com --name "Administrator"
 ```
 
 `create-admin` asks for the password at a hidden prompt; paste the generated one. Don't pass it with `-e ERP_ADMIN_PASSWORD=…` on the server, where it would stay in the shell history.
+
+Always pass `--env-file .env`: Compose otherwise looks for `.env` next to the compose file (`infra/`), and warns that `POSTGRES_PASSWORD` is not set. A shortcut for the server:
+
+```bash
+echo "alias dc='docker compose -f infra/docker-compose.yml --env-file .env'" >> ~/.bashrc   # then: dc ps, dc logs -f api
+```
 
 Then sign in at https://chonryong.com, and follow the [admin guide](admin-guide.md) to set up the company.
 
@@ -126,7 +132,7 @@ Deploy output is in the Actions run log. A failed deploy marks the run red and l
 | `GET /api/health/ready` | Readiness: also checks that the schema is at the latest migration (HTTP 503 if not). Docker's health check uses this |
 | **Settings → System Checks** | Ledger debits = credits, balance sheet balances, revenue splits match receipts, salary records match salary payments and employee expenses, audit log untampered, worker keeping up |
 | Nightly checks | The worker runs the same checks after 02:00. Any failure notifies administrators in the app (bell icon) and is logged as `check.result ok=false` |
-| Logs | `docker compose -f infra/docker-compose.yml logs -f api worker`. With `ERP_LOG_JSON=true` (the default in compose) lines are JSON with a request id, so they can be shipped to any log service |
+| Logs | `docker compose -f infra/docker-compose.yml --env-file .env logs -f api worker`. With `ERP_LOG_JSON=true` (the default in compose) lines are JSON with a request id, so they can be shipped to any log service |
 
 External monitoring: point an uptime checker at `https://chonryong.com/api/health/ready` (expect 200), and alert on `check.result` warnings in the worker log.
 
@@ -137,7 +143,7 @@ The `backup` service writes `erp_<UTC timestamp>.dump` (PostgreSQL custom format
 Take one now:
 
 ```bash
-docker compose -f infra/docker-compose.yml exec backup sh /backup.sh
+docker compose -f infra/docker-compose.yml --env-file .env exec backup sh /backup.sh
 ```
 
 **Copy backups off the server.** The volume is on the same disk as the database. For example, every night:
@@ -153,21 +159,21 @@ docker run --rm -v erp_backups:/b -v /mnt/offsite:/o alpine sh -c 'cp -n /b/*.du
 Restore the latest dump into a scratch database and look at the counts. Production is not touched:
 
 ```bash
-docker compose -f infra/docker-compose.yml exec backup sh -c 'ls -1t /backups | head -3'
-docker compose -f infra/docker-compose.yml exec backup sh /restore.sh /backups/erp_<stamp>.dump      # into "erp_restore"
+docker compose -f infra/docker-compose.yml --env-file .env exec backup sh -c 'ls -1t /backups | head -3'
+docker compose -f infra/docker-compose.yml --env-file .env exec backup sh /restore.sh /backups/erp_<stamp>.dump      # into "erp_restore"
 ```
 
 It prints the schema version and the number of journal lines and payments. Compare with the live system (Trial Balance, Payment Entries). Then drop the scratch database:
 
 ```bash
-docker compose -f infra/docker-compose.yml exec backup psql -d postgres -c 'DROP DATABASE erp_restore;'
+docker compose -f infra/docker-compose.yml --env-file .env exec backup psql -d postgres -c 'DROP DATABASE erp_restore;'
 ```
 
 ## Restoring production (after data loss)
 
-1. `docker compose -f infra/docker-compose.yml stop api worker web`
-2. `docker compose -f infra/docker-compose.yml exec backup sh /restore.sh /backups/erp_<stamp>.dump erp`
-3. `docker compose -f infra/docker-compose.yml start api worker web`
+1. `docker compose -f infra/docker-compose.yml --env-file .env stop api worker web`
+2. `docker compose -f infra/docker-compose.yml --env-file .env exec backup sh /restore.sh /backups/erp_<stamp>.dump erp`
+3. `docker compose -f infra/docker-compose.yml --env-file .env start api worker web`
 4. Sign in, open **Settings → System Checks**, and confirm everything passes.
 
 Anything entered after the dump's time must be re-entered.
