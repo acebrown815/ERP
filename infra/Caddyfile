@@ -22,3 +22,7 @@
 		reverse_proxy web:3000
 	}
 }
+
+www.{$ERP_DOMAIN} {
+	redir https://{$ERP_DOMAIN}{uri} permanent
+}

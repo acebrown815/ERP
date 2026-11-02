@@ -61,12 +61,13 @@ API tests use a real PostgreSQL database because triggers and constraints are pa
 ## Deployment (Docker Compose)
 
 ```bash
-cp .env.example .env          # set POSTGRES_PASSWORD and ERP_DOMAIN
+cp .env.example .env          # set POSTGRES_PASSWORD; ERP_DOMAIN is chonryong.com
 docker compose -f infra/docker-compose.yml --env-file .env up -d --build
-docker compose -f infra/docker-compose.yml exec api python -m app.cli seed --company "Your Company"
-docker compose -f infra/docker-compose.yml exec -e ERP_ADMIN_PASSWORD='...' api python -m app.cli create-admin --email you@company.com
+docker compose -f infra/docker-compose.yml exec api python -m app.cli seed --company "ChonRyong Inc"
+openssl rand -base64 24       # administrator password; keep it in a password manager
+docker compose -f infra/docker-compose.yml exec api python -m app.cli create-admin --email admin@chonryong.com --name "Administrator"   # prompts for it
 ```
 
-Caddy terminates TLS for `ERP_DOMAIN` and routes `/api` to the API and everything else to the web app. Migrations run automatically on start (`migrate` service).
+Caddy terminates TLS for `ERP_DOMAIN` (www redirects to it) and routes `/api` to the API and everything else to the web app. Migrations run automatically on start (`migrate` service).
 
 Pushes to `main` that pass CI are deployed to the server by GitHub Actions, which runs [infra/deploy.sh](infra/deploy.sh) over SSH; the images are built on the server. Server sizing and setup: [docs/operations.md](docs/operations.md).

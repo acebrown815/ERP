@@ -24,7 +24,14 @@ One VPS runs everything, and the images are built on it.
 
 The stack uses about 1 GB of RAM when running; the Next.js build briefly needs another 1.5–2 GB, which is why a 2 GB server needs swap. Ubuntu 22.04 or 24.04 (20.04 also works but is out of standard support).
 
-Before the first install, point the domain's DNS A record at the server (Caddy needs it to get the certificate), then as root:
+The ERP is served at **https://chonryong.com**; `www.chonryong.com` redirects to it. Before the first install, add two DNS A records pointing at the server's IP (Caddy needs both to get the certificates):
+
+| Name | Type | Value |
+|---|---|---|
+| `@` (chonryong.com) | A | VPS IPv4 |
+| `www` | A | VPS IPv4 |
+
+Then as root:
 
 ```bash
 apt update && apt upgrade -y
@@ -50,14 +57,18 @@ As `deploy` (the GitHub deploy key is set up in [Continuous deployment](#continu
 
 ```bash
 git clone git@github.com:acebrown815/ERP.git ~/erp && cd ~/erp
-cp .env.example .env            # set POSTGRES_PASSWORD (long, random: openssl rand -base64 32), ERP_DOMAIN, ERP_ENV=prod
+cp .env.example .env            # set POSTGRES_PASSWORD (long, random: openssl rand -base64 32); ERP_DOMAIN is chonryong.com
 chmod 600 .env
-docker compose -f infra/docker-compose.yml --env-file .env up -d --build
-docker compose -f infra/docker-compose.yml exec api python -m app.cli seed --company "Your Company"
-docker compose -f infra/docker-compose.yml exec -e ERP_ADMIN_PASSWORD='…' api python -m app.cli create-admin --email you@company.com
+bash infra/deploy.sh
+docker compose -f infra/docker-compose.yml exec api python -m app.cli seed --company "ChonRyong Inc"
+
+openssl rand -base64 24         # the administrator password: save it in a password manager now
+docker compose -f infra/docker-compose.yml exec api python -m app.cli create-admin --email admin@chonryong.com --name "Administrator"
 ```
 
-Then sign in, and follow the [admin guide](admin-guide.md) to set up the company.
+`create-admin` asks for the password at a hidden prompt; paste the generated one. Don't pass it with `-e ERP_ADMIN_PASSWORD=…` on the server, where it would stay in the shell history.
+
+Then sign in at https://chonryong.com, and follow the [admin guide](admin-guide.md) to set up the company.
 
 ## Upgrading
 
@@ -117,7 +128,7 @@ Deploy output is in the Actions run log. A failed deploy marks the run red and l
 | Nightly checks | The worker runs the same checks after 02:00. Any failure notifies administrators in the app (bell icon) and is logged as `check.result ok=false` |
 | Logs | `docker compose -f infra/docker-compose.yml logs -f api worker`. With `ERP_LOG_JSON=true` (the default in compose) lines are JSON with a request id, so they can be shipped to any log service |
 
-External monitoring: point an uptime checker at `https://<ERP_DOMAIN>/api/health/ready` (expect 200), and alert on `check.result` warnings in the worker log.
+External monitoring: point an uptime checker at `https://chonryong.com/api/health/ready` (expect 200), and alert on `check.result` warnings in the worker log.
 
 ## Backups
 
@@ -172,7 +183,7 @@ Anything entered after the dump's time must be re-entered.
 
 ## Performance
 
-`python tools/loadtest/loadtest.py --base https://<domain> --email … --password …` signs in and reads the busiest pages concurrently (read-only). On the development machine (300 requests, 10 at a time): p50 132 ms, p95 905 ms. The company dashboard is the slowest page (~0.9 s) because it recalculates every open salary period. Everything else is ~100–450 ms.
+`python tools/loadtest/loadtest.py --base https://chonryong.com --email … --password …` signs in and reads the busiest pages concurrently (read-only). On the development machine (300 requests, 10 at a time): p50 132 ms, p95 905 ms. The company dashboard is the slowest page (~0.9 s) because it recalculates every open salary period. Everything else is ~100–450 ms.
 
 ## Troubleshooting
 
