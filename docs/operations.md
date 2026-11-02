@@ -49,7 +49,7 @@ Only Caddy publishes ports (80, 443); PostgreSQL, the API and the web app are re
 As `deploy` (the GitHub deploy key is set up in [Continuous deployment](#continuous-deployment)):
 
 ```bash
-git clone git@github.com:<owner>/<repo>.git ~/erp && cd ~/erp
+git clone git@github.com:acebrown815/ERP.git ~/erp && cd ~/erp
 cp .env.example .env            # set POSTGRES_PASSWORD (long, random: openssl rand -base64 32), ERP_DOMAIN, ERP_ENV=prod
 chmod 600 .env
 docker compose -f infra/docker-compose.yml --env-file .env up -d --build
@@ -82,7 +82,7 @@ One-time setup:
    ssh-keygen -t ed25519 -N '' -f ~/.ssh/id_ed25519 -C erp-server
    cat ~/.ssh/id_ed25519.pub
    ```
-   In GitHub: repository **Settings → Deploy keys → Add deploy key**, paste it, leave "Allow write access" off. Then `ssh -T git@github.com` on the server to accept GitHub's host key, and clone (First install).
+   In GitHub: [acebrown815/ERP → Settings → Deploy keys](https://github.com/acebrown815/ERP/settings/keys) → **Add deploy key**, paste it, leave "Allow write access" off. Then `ssh -T git@github.com` on the server to accept GitHub's host key, and clone (First install).
 2. **GitHub → server (to run the deploy).** On your own machine:
    ```bash
    ssh-keygen -t ed25519 -N '' -f erp-actions -C github-actions
@@ -93,7 +93,7 @@ One-time setup:
    ```
    The forced command is required: the workflow sends only the commit sha, which arrives in the script as `SSH_ORIGINAL_COMMAND`, and the key can do nothing but deploy. Adjust the path if you cloned elsewhere.
 3. **Host key.** On your machine: `ssh-keyscan -p 22 <server>` and keep the output.
-4. **GitHub settings.** Repository **Settings → Environments → New environment** `production` (optionally add required reviewers so each deploy waits for approval). In that environment add:
+4. **GitHub settings.** [acebrown815/ERP → Settings → Environments](https://github.com/acebrown815/ERP/settings/environments) → **New environment** `production` (optionally add required reviewers so each deploy waits for approval). In that environment add:
 
    | Kind | Name | Value |
    |---|---|---|
