@@ -12,13 +12,13 @@ import { StatusBadge } from "@/components/payments/entry-view";
 import { Button } from "@/components/ui/button";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, Skeleton } from "@/components/ui/misc";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { formatAmount, formatShort, sign, subtract, sum } from "@/lib/money";
 import { currencyPrecision, useCompany, useCurrencies } from "@/lib/queries";
 import { useMe } from "@/lib/session";
 import { addDays, fmtDay, fmtTime, iso } from "@/components/calendar/utils";
 import { isOverdue } from "@/components/projects/shared";
-import type { CalendarFeed, CashFlow, CompanyDashboard, Holdings, MonthlySummary, Page, PaymentEntry, Task } from "@/lib/types";
+import type { CalendarFeed, CashFlow, CompanyDashboard, EmployeeSalary, Holdings, MonthlySummary, Page, PaymentEntry, Task } from "@/lib/types";
 import { cn, formatDate } from "@/lib/utils";
 
 
@@ -297,6 +297,107 @@ function AssetsByCurrency({ holdings }: { holdings: Holdings }) {
   );
 }
 
+/** Employee view of the money side: own revenue, expenses and salary (from /me/salary) and own payments.
+ * The API scopes both to the signed-in employee, so nothing about colleagues or company totals shows. */
+function EmployeeOverview({ showRevenue }: { showRevenue: boolean }) {
+  const base = useCompany().data?.base_currency ?? "USD";
+  const currencies = useCurrencies();
+  const salary = useQuery({ queryKey: ["me-salary"], queryFn: () => api.get<EmployeeSalary>("/me/salary"), retry: false });
+  const recent = useQuery({
+    queryKey: ["payment-entries", "recent", "mine"],
+    queryFn: () => api.get<Page<PaymentEntry>>("/payment-entries", { page_size: 6 }),
+    enabled: salary.isSuccess,
+  });
+  if (salary.isError) {
+    return salary.error instanceof ApiError && salary.error.status === 404 ? (
+      <Card className="mb-6">
+        <CardContent className="py-4 text-sm text-muted-foreground">
+          Your sign-in isn&apos;t linked to an employee record yet, so there are no revenue or salary figures to show. Ask an administrator to link it.
+        </CardContent>
+      </Card>
+    ) : null;
+  }
+  const s = salary.data;
+  const cur = s?.current;
+  const span = cur ? `${cur.period_label} · ${formatDate(cur.period_start)} – ${formatDate(cur.period_end)}` : undefined;
+  // statements are newest first; the chart reads oldest to newest.
+  const months = (s?.statements ?? []).slice(0, 12).reverse();
+  const prev = s?.statements.find((x) => x.period_id !== cur?.period_id);
+  return (
+    <>
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {showRevenue && (
+          <>
+            <Kpi label="My revenue this month" value={s ? (cur?.gross_revenue ?? "0") : undefined} base={base}
+              hint={[span ?? "Credited from customer payments", prev && `${prev.period_label}: ${formatAmount(prev.gross_revenue)}`].filter(Boolean).join(" · ")} />
+            <Kpi label="My expenses this month" value={s ? (cur?.expenses ?? "0") : undefined} base={base}
+              hint={[`Net ${formatAmount(cur?.revenue ?? "0")}`, prev && `${prev.period_label}: ${formatAmount(prev.expenses)}`].filter(Boolean).join(" · ")} />
+          </>
+        )}
+        <Kpi label="My salary this month" value={s ? (cur?.calculated ?? "0") : undefined} base={base}
+          hint={[cur?.period_status === "open" ? "Projected from revenue so far" : cur?.period_label, cur && sign(cur.paid) ? `${formatAmount(cur.paid)} paid` : undefined].filter(Boolean).join(" · ")} />
+        <Kpi label="Salary owed to me" value={s?.balance} base={base} tone={s && sign(s.balance) > 0 ? "good" : undefined}
+          hint={s ? `${formatAmount(s.paid_total)} paid of ${formatAmount(s.calculated_total)} earned in total` : undefined} />
+      </div>
+      {months.some((m) => sign(m.gross_revenue) || sign(m.expenses) || sign(m.calculated)) && (
+        <Card className="mb-6">
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle>Last 12 months</CardTitle>
+            <Button variant="ghost" size="sm" asChild><Link href="/me">My salary <ArrowRight /></Link></Button>
+          </CardHeader>
+          <CardContent>
+            <PeriodChart
+              label={showRevenue ? "My revenue, expenses and salary over the last 12 months" : "My salary over the last 12 months"}
+              height={220}
+              unit={base}
+              data={months.map((m) => ({ label: shortLabel(m.period_label), revenue: num(m.gross_revenue), expenses: num(m.expenses), salary: num(m.calculated), paid: num(m.paid) }))}
+              bars={showRevenue
+                ? [{ key: "revenue", label: "Revenue", color: SERIES[0] }, { key: "expenses", label: "Expenses", color: SERIES[1] }]
+                : [{ key: "paid", label: "Paid", color: SERIES[0] }]}
+              line={{ key: "salary", label: "Salary", color: SERIES[3] }}
+            />
+          </CardContent>
+        </Card>
+      )}
+      <Card className="mb-6">
+        <CardHeader className="flex-row items-center justify-between">
+          <CardTitle>My recent payments</CardTitle>
+          <Button variant="ghost" size="sm" asChild><Link href="/accounting/payment-entries">All my payments <ArrowRight /></Link></Button>
+        </CardHeader>
+        <CardContent>
+          {!recent.data ? <Skeleton className="h-24 w-full" /> : recent.data.items.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No payments involving you yet.</p>
+          ) : (
+            <ul className="divide-y">
+              {recent.data.items.map((e) => {
+                const out = e.direction === "pay";
+                return (
+                  <li key={e.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                    <Link href={`/accounting/payment-entries/${e.id}`} className="min-w-0 hover:underline">
+                      <span className="font-mono text-xs text-muted-foreground">{e.number}</span>{" "}
+                      {e.party_name ?? e.employee_name ?? "—"}
+                      <span className="text-muted-foreground"> · {formatDate(e.posting_date)}</span>
+                    </Link>
+                    <span className="flex shrink-0 items-center gap-3">
+                      <span className={cn("tabular text-right", !out && "text-success")}>
+                        {out ? "−" : ""}
+                        {e.my_share != null
+                          ? <>{formatShort(e.my_share)} {base} <span className="text-xs text-muted-foreground">your share</span></>
+                          : <>{formatShort(e.amount, currencyPrecision(currencies.data, e.currency))} {e.currency}</>}
+                      </span>
+                      <StatusBadge status={e.status} />
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
 /** My next seven days: tasks due (and overdue) plus calendar events. */
 function MyWeek() {
   const today = iso(new Date());
@@ -353,6 +454,7 @@ export default function DashboardPage() {
   const me = useMe();
   const firstName = me.full_name.split(/\s+/)[0];
   const finance = "reports.financial" in me.permissions;
+  const mySalary = "salary.read" in me.permissions;
   const quickLinks = [
     { href: "/accounting/payment-entries/new", label: "Record a payment", show: "payments.create" in me.permissions },
     { href: "/parties/customers", label: "Customers", show: "parties.read" in me.permissions },
@@ -368,8 +470,11 @@ export default function DashboardPage() {
 
   return (
     <>
-      <PageHeader title={`Welcome, ${firstName}`} description={finance ? "This month at a glance, from the posted ledger." : undefined} />
-      {finance && <FinanceOverview />}
+      <PageHeader
+        title={`Welcome, ${firstName}`}
+        description={finance ? "This month at a glance, from the posted ledger." : mySalary ? "Your month at a glance: your revenue, expenses, salary and payments." : undefined}
+      />
+      {finance ? <FinanceOverview /> : mySalary && <EmployeeOverview showRevenue={"revenue.read" in me.permissions} />}
       <div className="grid gap-6 lg:grid-cols-3">
         <MyWeek />
         <Card>
