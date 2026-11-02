@@ -3,7 +3,6 @@
 Web-based ERP for a software services company: double-entry accounting, payments, employee revenue attribution, salary, projects and calendars.
 
 - Design: [docs/architecture.md](docs/architecture.md)
-- Progress: [docs/phase-1.md](docs/phase-1.md), [docs/phase-2.md](docs/phase-2.md), [docs/phase-3.md](docs/phase-3.md), [docs/phase-4.md](docs/phase-4.md), [docs/phase-5-6.md](docs/phase-5-6.md)
 - Running it: [docs/operations.md](docs/operations.md) (servers, backups, monitoring) · [docs/admin-guide.md](docs/admin-guide.md) (setup and month-end)
 
 ```
@@ -69,3 +68,5 @@ docker compose -f infra/docker-compose.yml exec -e ERP_ADMIN_PASSWORD='...' api 
 ```
 
 Caddy terminates TLS for `ERP_DOMAIN` and routes `/api` to the API and everything else to the web app. Migrations run automatically on start (`migrate` service).
+
+Pushes to `main` that pass CI are deployed to the server by GitHub Actions, which runs [infra/deploy.sh](infra/deploy.sh) over SSH; the images are built on the server. Server sizing and setup: [docs/operations.md](docs/operations.md).

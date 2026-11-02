@@ -12,10 +12,46 @@ For whoever runs the ERP server. The stack is one VM with Docker Compose (`infra
 | `caddy` | HTTPS for `ERP_DOMAIN`; `/api/*` to the API, everything else to the web app |
 | `backup` | Daily `pg_dump` into the `backups` volume, kept `BACKUP_KEEP_DAYS` days |
 
-## First install
+## Server
+
+One VPS runs everything, and the images are built on it.
+
+| | Minimum | Recommended |
+|---|---|---|
+| CPU | 2 vCPU | 2 vCPU |
+| RAM | 2 GB + 4 GB swap | 4 GB (+ swap) |
+| Disk | 30 GB SSD | 50 GB+ SSD |
+
+The stack uses about 1 GB of RAM when running; the Next.js build briefly needs another 1.5–2 GB, which is why a 2 GB server needs swap. Ubuntu 22.04 or 24.04 (20.04 also works but is out of standard support).
+
+Before the first install, point the domain's DNS A record at the server (Caddy needs it to get the certificate), then as root:
 
 ```bash
-cp .env.example .env            # set POSTGRES_PASSWORD (long, random), ERP_DOMAIN, ERP_ENV=prod
+apt update && apt upgrade -y
+adduser deploy && usermod -aG sudo deploy
+ufw allow OpenSSH && ufw allow 80 && ufw allow 443 && ufw enable
+
+fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
+curl -fsSL https://get.docker.com | sh
+usermod -aG docker deploy
+cat > /etc/docker/daemon.json <<'EOF'
+{ "log-driver": "json-file", "log-opts": { "max-size": "20m", "max-file": "5" } }
+EOF
+systemctl restart docker
+```
+
+Only Caddy publishes ports (80, 443); PostgreSQL, the API and the web app are reachable only on Docker's internal network.
+
+## First install
+
+As `deploy` (the GitHub deploy key is set up in [Continuous deployment](#continuous-deployment)):
+
+```bash
+git clone git@github.com:<owner>/<repo>.git ~/erp && cd ~/erp
+cp .env.example .env            # set POSTGRES_PASSWORD (long, random: openssl rand -base64 32), ERP_DOMAIN, ERP_ENV=prod
+chmod 600 .env
 docker compose -f infra/docker-compose.yml --env-file .env up -d --build
 docker compose -f infra/docker-compose.yml exec api python -m app.cli seed --company "Your Company"
 docker compose -f infra/docker-compose.yml exec -e ERP_ADMIN_PASSWORD='…' api python -m app.cli create-admin --email you@company.com
@@ -25,12 +61,51 @@ Then sign in, and follow the [admin guide](admin-guide.md) to set up the company
 
 ## Upgrading
 
+Pushes to `main` deploy automatically (next section). By hand, on the server:
+
 ```bash
-git pull
-docker compose -f infra/docker-compose.yml --env-file .env up -d --build
+bash infra/deploy.sh             # latest origin/main; or: bash infra/deploy.sh <commit sha>
 ```
 
-`migrate` applies new migrations before `api` and `worker` start. If a migration fails, the API does not start; the error is in `docker compose logs migrate`. A backup is taken automatically at start-up by the `backup` service, but take one by hand before any upgrade (below).
+[`infra/deploy.sh`](../infra/deploy.sh) fetches the commit and resets the checkout to it (do not edit tracked files on the server; `.env` and the volumes are not touched), builds the images, takes a backup, restarts the stack, waits until the API is healthy and the other services are running, then prunes old images. If the build fails, the running version stays up. `migrate` applies new migrations before `api` and `worker` start; if a migration fails, the API does not start, the deploy fails and prints `docker compose logs migrate`.
+
+To roll back, deploy the previous commit: `bash infra/deploy.sh <older sha>`. Migrations are not reversed, so if the bad release changed the schema, restore the pre-deploy backup instead (see [Restoring production](#restoring-production-after-data-loss)).
+
+## Continuous deployment
+
+`.github/workflows/ci.yml` runs the API and web checks on every push and pull request. On a push to `main` where both pass, the `deploy` job connects to the server over SSH and runs `infra/deploy.sh <sha>`. Deploys run one at a time.
+
+One-time setup:
+
+1. **Server → GitHub (to fetch the code).** On the server, as `deploy`:
+   ```bash
+   ssh-keygen -t ed25519 -N '' -f ~/.ssh/id_ed25519 -C erp-server
+   cat ~/.ssh/id_ed25519.pub
+   ```
+   In GitHub: repository **Settings → Deploy keys → Add deploy key**, paste it, leave "Allow write access" off. Then `ssh -T git@github.com` on the server to accept GitHub's host key, and clone (First install).
+2. **GitHub → server (to run the deploy).** On your own machine:
+   ```bash
+   ssh-keygen -t ed25519 -N '' -f erp-actions -C github-actions
+   ```
+   Append `erp-actions.pub` to `/home/deploy/.ssh/authorized_keys` on the server, restricted to deploying:
+   ```
+   restrict,command="bash /home/deploy/erp/infra/deploy.sh" ssh-ed25519 AAAA… github-actions
+   ```
+   The forced command is required: the workflow sends only the commit sha, which arrives in the script as `SSH_ORIGINAL_COMMAND`, and the key can do nothing but deploy. Adjust the path if you cloned elsewhere.
+3. **Host key.** On your machine: `ssh-keyscan -p 22 <server>` and keep the output.
+4. **GitHub settings.** Repository **Settings → Environments → New environment** `production` (optionally add required reviewers so each deploy waits for approval). In that environment add:
+
+   | Kind | Name | Value |
+   |---|---|---|
+   | Secret | `DEPLOY_SSH_KEY` | Contents of the private key `erp-actions` |
+   | Secret | `DEPLOY_KNOWN_HOSTS` | Output of `ssh-keyscan` |
+   | Variable | `DEPLOY_HOST` | Server IP or host name |
+   | Variable | `DEPLOY_USER` | `deploy` |
+   | Variable | `DEPLOY_PORT` | SSH port (optional, default 22) |
+
+   Then delete `erp-actions` from your machine.
+
+Deploy output is in the Actions run log. A failed deploy marks the run red and leaves the old containers running if the build failed, or prints the failing service's log if start-up failed.
 
 ## Health and monitoring
 
