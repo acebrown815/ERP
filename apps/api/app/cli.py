@@ -17,6 +17,7 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.core.db import SessionLocal, engine
+from app.core.errors import NotFound
 from app.models import import_all_models
 
 API_DIR = Path(__file__).resolve().parent.parent
@@ -82,7 +83,10 @@ async def create_user(email: str, name: str, password: str, role_key: str) -> bo
         if await auth.get_user_by_email(session, email):
             print(f"user {email} already exists; skipped")
             return False
-        role = await rbac.role_by_key(session, role_key)
+        try:
+            role = await rbac.role_by_key(session, role_key)
+        except NotFound:
+            raise SystemExit(f"role {role_key!r} not found; run `python -m app.cli seed --company ...` first") from None
         await auth.create_user(
             session, actor_id=None, email=email, full_name=name, password=password, role_ids=[role.id]
         )
