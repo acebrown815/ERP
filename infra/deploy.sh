@@ -45,6 +45,13 @@ if ! compose up -d --remove-orphans; then
   exit 1
 fi
 
+# `up` does not recreate Caddy when only the mounted Caddyfile changed, and a running container
+# keeps the old file after git replaces it. Recreate Caddy when its config differs from the checkout.
+if ! compose exec -T caddy cat /etc/caddy/Caddyfile 2> /dev/null | cmp -s - infra/Caddyfile; then
+  echo "deploy: Caddyfile changed, recreating caddy"
+  compose up -d --force-recreate caddy
+fi
+
 echo "deploy: waiting for the API to become healthy"
 for _ in $(seq 1 60); do
   status=$(docker inspect --format '{{.State.Health.Status}}' "$(compose ps -q api)" 2> /dev/null || echo starting)
