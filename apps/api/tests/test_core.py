@@ -57,6 +57,10 @@ def test_uuid7_version_and_order() -> None:
     fa, fb = ids._uuid7_fallback(), ids._uuid7_fallback()
     assert fa.version == 7 and fa.variant == uuid.RFC_4122
     assert fa.int >> 80 <= fb.int >> 80  # millisecond timestamp prefix is monotonic
+    # Many ids inside one millisecond still sort in creation order (rows ordered by created_at, id).
+    burst = [ids._uuid7_fallback() for _ in range(2000)]
+    assert burst == sorted(burst) and len(set(burst)) == len(burst)
+    assert all(u.version == 7 and u.variant == uuid.RFC_4122 for u in burst)
 
 
 async def test_number_series(db: AsyncSession) -> None:
