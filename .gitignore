@@ -19,6 +19,9 @@ node_modules/
 apps/web/out/
 *.tsbuildinfo
 
+# Logs from tools/dev.py
+.dev/
+
 # Local dev database (tools/devdb)
 tools/devdb/data/
 tools/devdb/postgres.log
