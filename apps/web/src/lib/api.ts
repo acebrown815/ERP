@@ -32,7 +32,7 @@ function readCookie(name: string): string | undefined {
     ?.slice(name.length + 1);
 }
 
-type Query = Record<string, string | number | boolean | null | undefined>;
+type Query = Record<string, string | string[] | number | boolean | null | undefined>;
 
 export type RequestOptions = {
   query?: Query;
@@ -46,7 +46,8 @@ function buildUrl(path: string, query?: Query): string {
   if (!query) return url;
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(query)) {
-    if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
+    if (Array.isArray(v)) v.forEach((item) => params.append(k, item));
+    else if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
   }
   const qs = params.toString();
   return qs ? `${url}?${qs}` : url;

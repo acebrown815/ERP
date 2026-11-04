@@ -41,3 +41,17 @@ class Employee(UUIDPk, Authored, Base):
     timezone: Mapped[str | None] = mapped_column(String(64))
     notes: Mapped[str | None] = mapped_column(Text)
     version: Mapped[int] = mapped_column(default=1)
+
+
+class EmployeeBiddingProfile(UUIDPk, Authored, Base):
+    """One of an employee's tabs in the bids spreadsheet (BidExtension "Sheet Tab Name"); see the bidding module.
+    A tab belongs to one employee at most; an employee can have several."""
+
+    __tablename__ = "employee_bidding_profiles"
+    __table_args__ = (
+        Index("uq_employee_bidding_profiles_name", text("lower(name)"), unique=True),
+        Index("ix_employee_bidding_profiles_employee_id", "employee_id"),
+    )
+
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(100))

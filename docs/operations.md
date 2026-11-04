@@ -124,6 +124,25 @@ One-time setup:
 
 Deploy output is in the Actions run log. A failed deploy marks the run red and leaves the old containers running if the build failed, or prints the failing service's log if start-up failed.
 
+## Bidding sheets
+
+The Bidding pages (My Bidding, Team Overview, Daily Report, All Bids, Job List) read two Google Sheets **live** through the Apps Script web apps that already write them. No bid or job data is stored in the database. Only jobs applied to are counted: a row with nothing but a Link, queued for Auto-Bid, is ignored. The API keeps what it read in memory and reads the sheets again in the background at startup and whenever the data reaches its age limit (Settings → Bidding Sheets, default 5 minutes), so pages answer from memory and don't wait for Google; only a page opened before the first read finishes waits. This reads both sheets around the clock: raise the age limit to read them less often. The pages also have a Refresh button. Plan and design: [bidding-analytics-plan.md](bidding-analytics-plan.md).
+
+**Connect them in the app: Settings → Bidding Sheets → Connections** (administrators). For each sheet, paste the web app's `/exec` URL and its secret, click **Test**, then **Save connections**. Changes apply on the next page load, with no restart.
+
+| Sheet | URL and secret |
+|---|---|
+| Bids (BidExtension) | The `BidExtension/docs/sheets-sync/Code.gs` deployment and its `SHARED_SECRET`. The deployed script must include the read-only `listTabs` / `readTabs` actions: paste the current `Code.gs`, then **Deploy → Manage deployments → Edit → New version** (same URL). |
+| Job list (job-scraper) | The `job-scraper/apps_script/Code.gs` deployment and its `TOKEN` script property, plus the tab names to read (default: the eight `US/EU - Software/ML/AI/Data/DevOps/SRE` tabs). Only those tabs are requested, because that script creates a tab it is asked for that doesn't exist. |
+
+Only `https://script.google.com/…/exec` URLs are accepted, since the API server fetches them. Secrets are write-only: the page shows whether one is saved and its last four characters, and the audit log records only that it changed. They are stored in the `bidding_settings` table, so app backups include them; keep backups private.
+
+The app is the only place these are set; there are no environment variables for them. After a fresh install with no restored backup, enter them again. When a URL changes (a new deployment, for example), enter its secret again too: the saved secret is only ever sent to the URL it was saved with, and the API follows redirects only within Google's script hosts.
+
+Each of an employee's *bidding profile names* must match a *Sheet Tab Name* in their extension. One employee can have several, a tab can belong to only one employee, and employees can set their own on My Bidding → Profile. The Status part of the same settings page lists tabs nobody has claimed.
+
+If a sheet can't be read (wrong URL or secret, old deployment, Google outage), the pages keep showing the last data that loaded with a warning, and Settings → Bidding Sheets shows the error. The job list only goes back as far as the scraper keeps rows (`prune_after_days`, default 30).
+
 ## Health and monitoring
 
 | Check | Use |

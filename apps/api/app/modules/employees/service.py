@@ -3,13 +3,14 @@ from datetime import date
 from typing import Any
 
 from sqlalchemy import Select, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import Conflict, NotFound, PreconditionFailed, ValidationFailed, field_error
 from app.modules.audit import api as audit
 from app.modules.auth import api as auth
 from app.modules.categories import api as categories
-from app.modules.employees.models import Department, Employee
+from app.modules.employees.models import Department, Employee, EmployeeBiddingProfile
 from app.modules.parties import api as parties
 
 EDITABLE = (
@@ -181,6 +182,118 @@ async def update(
             after=a,
         )
     return employee
+
+
+# ---- bidding profile names (an employee's tabs in the bids spreadsheet) --------------------------------------
+
+
+def normalize_profile_name(name: str | None) -> str | None:
+    """Trim and collapse inner spaces; blank means "not set"."""
+    cleaned = " ".join((name or "").split())
+    return cleaned or None
+
+
+async def profile_names(session: AsyncSession, employee_id: uuid.UUID) -> list[str]:
+    rows = await session.execute(
+        select(EmployeeBiddingProfile.name)
+        .where(EmployeeBiddingProfile.employee_id == employee_id)
+        .order_by(func.lower(EmployeeBiddingProfile.name))
+    )
+    return list(rows.scalars())
+
+
+def _profile_name_taken(message: str) -> ValidationFailed:
+    return ValidationFailed(
+        "Bidding profile name in use", errors=[field_error("bidding_profile_names", message, "duplicate")]
+    )
+
+
+async def set_bidding_profile_names(
+    session: AsyncSession, *, actor_id: uuid.UUID, employee_id: uuid.UUID, names: list[str]
+) -> Employee:
+    """Replace the employee's profile names (employees may set their own without employees.manage). Names are
+    normalized and de-duplicated ignoring case; a name another employee already uses is rejected."""
+    employee = await get(session, employee_id)
+    wanted: dict[str, str] = {}
+    for raw in names:
+        name = normalize_profile_name(raw)
+        if name:
+            wanted.setdefault(name.lower(), name)
+
+    if wanted:
+        clash = (
+            await session.execute(
+                select(EmployeeBiddingProfile.name, Employee.full_name)
+                .join(Employee, Employee.id == EmployeeBiddingProfile.employee_id)
+                .where(
+                    func.lower(EmployeeBiddingProfile.name).in_(wanted),
+                    EmployeeBiddingProfile.employee_id != employee.id,
+                )
+                .order_by(func.lower(EmployeeBiddingProfile.name))
+                .limit(1)
+            )
+        ).first()
+        if clash:
+            raise _profile_name_taken(f"“{clash[0]}” is already used by {clash[1]}")
+
+    current = list(
+        (
+            await session.execute(
+                select(EmployeeBiddingProfile).where(EmployeeBiddingProfile.employee_id == employee.id)
+            )
+        ).scalars()
+    )
+    before = sorted((row.name for row in current), key=str.lower)
+    after = sorted(wanted.values(), key=str.lower)
+    if before == after:
+        return employee
+
+    existing = {row.name.lower() for row in current}
+    for row in current:
+        key = row.name.lower()
+        if key not in wanted:
+            await session.delete(row)
+        elif row.name != wanted[key]:
+            row.name, row.updated_by = wanted[key], actor_id
+    for key, name in wanted.items():
+        if key not in existing:
+            session.add(
+                EmployeeBiddingProfile(employee_id=employee.id, name=name, created_by=actor_id, updated_by=actor_id)
+            )
+    employee.version += 1
+    employee.updated_by = actor_id
+    try:
+        await session.flush()
+    except IntegrityError as e:  # someone else claimed the same tab between the check above and this save
+        raise _profile_name_taken("One of these names was just taken by another employee") from e
+    await audit.record(
+        session,
+        actor_id=actor_id,
+        action="employee.bidding_profiles_set",
+        entity_type="employee",
+        entity_id=employee.id,
+        before={"bidding_profile_names": before},
+        after={"bidding_profile_names": after},
+    )
+    return employee
+
+
+async def bidding_profiles(session: AsyncSession) -> list[tuple[Employee, list[str]]]:
+    """Every employee that is not terminated, plus terminated ones that still have profile names, with those names."""
+    names: dict[uuid.UUID, list[str]] = {}
+    rows = await session.execute(
+        select(EmployeeBiddingProfile.employee_id, EmployeeBiddingProfile.name).order_by(
+            func.lower(EmployeeBiddingProfile.name)
+        )
+    )
+    for employee_id, name in rows:
+        names.setdefault(employee_id, []).append(name)
+    employees = await session.execute(
+        select(Employee)
+        .where(or_(Employee.status != "terminated", Employee.id.in_(select(EmployeeBiddingProfile.employee_id))))
+        .order_by(func.lower(Employee.full_name))
+    )
+    return [(e, names.get(e.id, [])) for e in employees.scalars()]
 
 
 # ---- departments -----------------------------------------------------------------------------------

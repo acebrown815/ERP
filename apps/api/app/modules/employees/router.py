@@ -42,6 +42,10 @@ class EmployeeOut(BaseModel):
     version: int
 
 
+class EmployeeDetailOut(EmployeeOut):
+    bidding_profile_names: list[str]
+
+
 class EmployeeCreateIn(BaseModel):
     full_name: str = Field(min_length=1, max_length=200)
     email: EmailStr | None = None
@@ -129,7 +133,7 @@ async def my_employee(user: CurrentUser = Depends(current_user), session: AsyncS
     return employee
 
 
-@router.get("/employees/{employee_id}", response_model=EmployeeOut)
+@router.get("/employees/{employee_id}", response_model=EmployeeDetailOut)
 async def get_employee(
     employee_id: uuid.UUID,
     user: CurrentUser = Depends(require("employees.read")),
@@ -139,7 +143,10 @@ async def get_employee(
     only_user, only_ids = await _scope_filter(session, user)
     if (only_user and employee.user_id != only_user) or (only_ids is not None and employee.id not in only_ids):
         raise NotFound("Employee not found")
-    return employee
+    return EmployeeDetailOut(
+        **EmployeeOut.model_validate(employee).model_dump(),
+        bidding_profile_names=await service.profile_names(session, employee.id),
+    )
 
 
 @router.post("/employees", response_model=EmployeeOut, status_code=201)

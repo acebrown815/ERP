@@ -2416,6 +2416,246 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bidding/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stats
+         * @description Company-wide (ALL, no employee_id) or one employee's numbers for a date range (default: last 30 days).
+         */
+        get: operations["stats_api_v1_bidding_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bidding/daily": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Daily */
+        get: operations["daily_api_v1_bidding_daily_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bidding/bids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Bids */
+        get: operations["list_bids_api_v1_bidding_bids_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bidding/bids/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Bids */
+        get: operations["export_bids_api_v1_bidding_bids_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bidding/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Jobs
+         * @description Every scraped job with who bid on it. Visible to everyone with bidding.read.
+         */
+        get: operations["list_jobs_api_v1_bidding_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bidding/jobs/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Jobs */
+        get: operations["export_jobs_api_v1_bidding_jobs_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bidding/daily/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Daily */
+        get: operations["export_daily_api_v1_bidding_daily_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bidding/me/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Profile */
+        get: operations["my_profile_api_v1_bidding_me_profile_get"];
+        /**
+         * Set My Profile
+         * @description Employees set their own bidding profile names: the tabs their extension writes to.
+         */
+        put: operations["set_my_profile_api_v1_bidding_me_profile_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bidding/employees/{employee_id}/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Employee Profile */
+        put: operations["set_employee_profile_api_v1_bidding_employees__employee_id__profile_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bidding/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sources */
+        get: operations["sources_api_v1_bidding_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bidding/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh
+         * @description Pull both sheets again now (ignored if the data is under 15 seconds old).
+         */
+        post: operations["refresh_api_v1_bidding_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bidding/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Bidding Settings */
+        get: operations["get_bidding_settings_api_v1_bidding_settings_get"];
+        /** Update Bidding Settings */
+        put: operations["update_bidding_settings_api_v1_bidding_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bidding/settings/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Connection
+         * @description Try a web app with the values typed in the form (blank = the saved ones). Reads only.
+         *
+         *     The saved secret only ever goes to the saved URL: testing another URL needs its secret typed in.
+         */
+        post: operations["test_connection_api_v1_bidding_settings_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -2827,6 +3067,101 @@ export interface components {
             total_equity: string;
             /** Balanced */
             balanced: boolean;
+        };
+        /** BidOut */
+        BidOut: {
+            /** Tab */
+            tab: string;
+            /** Employee Id */
+            employee_id: string | null;
+            /** Employee Name */
+            employee_name: string | null;
+            /** Row */
+            row: number;
+            /** Date */
+            date: string | null;
+            /** Title */
+            title: string;
+            /** Link */
+            link: string;
+            /** Company */
+            company: string;
+            /** Location */
+            location: string;
+            /** Salary */
+            salary: string;
+            /** Resume */
+            resume: string;
+            /** Score */
+            score: number | null;
+            /** Duplicate */
+            duplicate: boolean;
+            /** In Job List */
+            in_job_list: boolean;
+            /** Job Key */
+            job_key: string | null;
+            /** Region */
+            region: string | null;
+            /** Role */
+            role: string | null;
+            /** Listings */
+            listings: string[];
+        };
+        /** BiddingJobOut */
+        BiddingJobOut: {
+            /** Key */
+            key: string;
+            /** Region */
+            region: string;
+            /** Role */
+            role: string;
+            /** Listings */
+            listings: string[];
+            /** Title */
+            title: string;
+            /** Company */
+            company: string;
+            /** Location */
+            location: string;
+            /** Country */
+            country: string;
+            /** Remote */
+            remote: boolean;
+            /** Skill Level */
+            skill_level: string;
+            /** Salary */
+            salary: string;
+            /** Ats */
+            ats: string;
+            /** Is Recruiter */
+            is_recruiter: boolean;
+            /** Posted At */
+            posted_at: string | null;
+            /** First Seen */
+            first_seen: string | null;
+            /** Url */
+            url: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "not_bid" | "applied";
+            /** Duplicate */
+            duplicate: boolean;
+            /** Bids */
+            bids: components["schemas"]["JobBidOut"][];
+        };
+        /** BidsPage */
+        BidsPage: {
+            /** Items */
+            items: components["schemas"]["BidOut"][];
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            data: components["schemas"]["DataState"];
         };
         /** BoardOut */
         BoardOut: {
@@ -3247,6 +3582,39 @@ export interface components {
             /** Top5 Pct */
             top5_pct: string | null;
         };
+        /**
+         * ConnectionTestIn
+         * @description Try a web app before saving. Blank values use what is saved.
+         */
+        ConnectionTestIn: {
+            /**
+             * Target
+             * @enum {string}
+             */
+            target: "bids" | "jobs";
+            /** Url */
+            url?: string | null;
+            /** Secret */
+            secret?: string | null;
+            /** Tabs */
+            tabs?: string[] | null;
+        };
+        /** ConnectionTestOut */
+        ConnectionTestOut: {
+            /** Ok */
+            ok: boolean;
+            /** Message */
+            message: string;
+            /** Tabs */
+            tabs: components["schemas"]["TabCount"][];
+        };
+        /** Count */
+        Count: {
+            /** Name */
+            name: string;
+            /** Count */
+            count: number;
+        };
         /** CurrencyCreateIn */
         CurrencyCreateIn: {
             /** Code */
@@ -3394,6 +3762,51 @@ export interface components {
             /** Blockers */
             blockers: string[];
         };
+        /** DailyOut */
+        DailyOut: {
+            /**
+             * Date From
+             * Format: date
+             */
+            date_from: string;
+            /**
+             * Date To
+             * Format: date
+             */
+            date_to: string;
+            /** Applied */
+            applied: number;
+            /** Avg Score */
+            avg_score: number | null;
+            /** Active Bidders */
+            active_bidders: number;
+            /** Scraped */
+            scraped: number;
+            /** Rows */
+            rows: components["schemas"]["DailyRow"][];
+            data: components["schemas"]["DataState"];
+        };
+        /** DailyRow */
+        DailyRow: {
+            /** Employee Id */
+            employee_id: string | null;
+            /** Name */
+            name: string;
+            /** Tabs */
+            tabs: string[];
+            /** Applied */
+            applied: number;
+            /** Avg Score */
+            avg_score: number | null;
+            /** Min Score */
+            min_score: number | null;
+            /** Max Score */
+            max_score: number | null;
+            /** Resumes */
+            resumes: components["schemas"]["Count"][];
+            /** In Job List */
+            in_job_list: number;
+        };
         /** DashboardOut */
         DashboardOut: {
             /** Base Currency */
@@ -3439,6 +3852,21 @@ export interface components {
             /** Upcoming */
             upcoming: components["schemas"]["Upcoming"][];
         };
+        /**
+         * DataState
+         * @description How fresh the numbers are; every response carries it so pages can show "Data as of …".
+         */
+        DataState: {
+            /**
+             * Built At
+             * Format: date-time
+             */
+            built_at: string;
+            bids: components["schemas"]["SourceOut"];
+            jobs: components["schemas"]["SourceOut"];
+            /** Job List From */
+            job_list_from: string | null;
+        };
         /** DayOut */
         DayOut: {
             /**
@@ -3456,6 +3884,20 @@ export interface components {
             load: string;
             /** On Leave */
             on_leave: boolean;
+        };
+        /** DayPoint */
+        DayPoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Applied */
+            applied: number;
+            /** Scraped */
+            scraped: number;
+            /** Avg Score */
+            avg_score: number | null;
         };
         /** DecisionIn */
         DecisionIn: {
@@ -3541,6 +3983,62 @@ export interface components {
             notes?: string | null;
             /** User Id */
             user_id?: string | null;
+        };
+        /** EmployeeDetailOut */
+        EmployeeDetailOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Number */
+            number: string;
+            /**
+             * Party Id
+             * Format: uuid
+             */
+            party_id: string;
+            /** User Id */
+            user_id: string | null;
+            /** Full Name */
+            full_name: string;
+            /** Email */
+            email: string | null;
+            /** Phone */
+            phone: string | null;
+            /** Department Id */
+            department_id: string | null;
+            /** Job Title */
+            job_title: string | null;
+            /**
+             * Employment Type Category Id
+             * Format: uuid
+             */
+            employment_type_category_id: string;
+            /** Employment Type Other Text */
+            employment_type_other_text: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /** End Date */
+            end_date: string | null;
+            /** Timezone */
+            timezone: string | null;
+            /** Notes */
+            notes: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Version */
+            version: number;
+            /** Bidding Profile Names */
+            bidding_profile_names: string[];
         };
         /** EmployeeExpenseOut */
         EmployeeExpenseOut: {
@@ -3637,6 +4135,31 @@ export interface components {
             allocations: components["schemas"]["RevenueAllocationOut"][];
             /** Expenses */
             expenses: components["schemas"]["EmployeeExpenseOut"][];
+        };
+        /** EmployeeRow */
+        EmployeeRow: {
+            /** Employee Id */
+            employee_id: string | null;
+            /** Name */
+            name: string;
+            /** Tabs */
+            tabs: string[];
+            /** Applied */
+            applied: number;
+            /** Avg Score */
+            avg_score: number | null;
+            /** Min Score */
+            min_score: number | null;
+            /** Max Score */
+            max_score: number | null;
+            /** Days Active */
+            days_active: number;
+            /** Last Date */
+            last_date: string | null;
+            /** Resumes */
+            resumes: components["schemas"]["Count"][];
+            /** By Day */
+            by_day: number[];
         };
         /** EmployeeSalaryOut */
         EmployeeSalaryOut: {
@@ -4084,6 +4607,17 @@ export interface components {
             /** Attendee Ids */
             attendee_ids?: string[] | null;
         };
+        /** Facets */
+        Facets: {
+            /** Regions */
+            regions: string[];
+            /** Roles */
+            roles: string[];
+            /** Ats */
+            ats: string[];
+            /** Skill Levels */
+            skill_levels: string[];
+        };
         /** FeeRow */
         FeeRow: {
             /** Account Name */
@@ -4420,6 +4954,19 @@ export interface components {
             /** Missing Rates */
             missing_rates: string[];
         };
+        /** JobBidOut */
+        JobBidOut: {
+            /** Tab */
+            tab: string;
+            /** Employee Id */
+            employee_id: string | null;
+            /** Employee Name */
+            employee_name: string | null;
+            /** Date */
+            date: string | null;
+            /** Score */
+            score: number | null;
+        };
         /** JobOut */
         JobOut: {
             /**
@@ -4445,6 +4992,30 @@ export interface components {
             file: string | null;
             /** Message */
             message: string | null;
+        };
+        /** JobTabOut */
+        JobTabOut: {
+            /** Name */
+            name: string;
+            /** Rows */
+            rows: number;
+        };
+        /** JobsPage */
+        JobsPage: {
+            /** Items */
+            items: components["schemas"]["BiddingJobOut"][];
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Not Bid */
+            not_bid: number;
+            /** Applied */
+            applied: number;
+            facets: components["schemas"]["Facets"];
+            data: components["schemas"]["DataState"];
         };
         /** JournalIn */
         JournalIn: {
@@ -5467,6 +6038,58 @@ export interface components {
             /** Scopes */
             scopes: string[];
         };
+        /** PersonOut */
+        PersonOut: {
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /** Name */
+            name: string;
+            /** Profile Names */
+            profile_names: string[];
+        };
+        /**
+         * ProfileIn
+         * @description The full list: names left out are removed.
+         */
+        ProfileIn: {
+            /** Profile Names */
+            profile_names: string[];
+        };
+        /** ProfileOut */
+        ProfileOut: {
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /** Employee Name */
+            employee_name: string;
+            /** Profile Names */
+            profile_names: string[];
+            /** Tabs */
+            tabs: components["schemas"]["ProfileTab"][];
+            /** Rows */
+            rows: number;
+            /** Applied */
+            applied: number;
+            /** Available Tabs */
+            available_tabs: string[];
+            data: components["schemas"]["DataState"];
+        };
+        /** ProfileTab */
+        ProfileTab: {
+            /** Name */
+            name: string;
+            /** Found */
+            found: boolean;
+            /** Rows */
+            rows: number;
+            /** Applied */
+            applied: number;
+        };
         /** ProfitLossOut */
         ProfitLossOut: {
             /**
@@ -6169,6 +6792,75 @@ export interface components {
             /** Password */
             password: string;
         };
+        /**
+         * SettingsIn
+         * @description Send only what changes. A secret sent as "" is removed; leaving it out keeps the saved one.
+         */
+        SettingsIn: {
+            /** Version */
+            version: number;
+            /** Bids Webapp Url */
+            bids_webapp_url?: string | null;
+            /** Bids Secret */
+            bids_secret?: string | null;
+            /** Jobs Webapp Url */
+            jobs_webapp_url?: string | null;
+            /** Jobs Token */
+            jobs_token?: string | null;
+            /** Jobs Tabs */
+            jobs_tabs?: string[] | null;
+            /** Cache Seconds */
+            cache_seconds?: number | null;
+        };
+        /**
+         * SettingsOut
+         * @description Secrets are never returned: only whether they are set and their last four characters.
+         */
+        SettingsOut: {
+            /** Bids Webapp Url */
+            bids_webapp_url: string;
+            /** Bids Secret Set */
+            bids_secret_set: boolean;
+            /** Bids Secret Hint */
+            bids_secret_hint: string | null;
+            /** Jobs Webapp Url */
+            jobs_webapp_url: string;
+            /** Jobs Token Set */
+            jobs_token_set: boolean;
+            /** Jobs Token Hint */
+            jobs_token_hint: string | null;
+            /** Jobs Tabs */
+            jobs_tabs: string[];
+            /** Cache Seconds */
+            cache_seconds: number;
+            /** Version */
+            version: number;
+        };
+        /** SourceOut */
+        SourceOut: {
+            /** Configured */
+            configured: boolean;
+            /** Fetched At */
+            fetched_at: string | null;
+            /** Error */
+            error: string | null;
+        };
+        /** SourcesOut */
+        SourcesOut: {
+            data: components["schemas"]["DataState"];
+            /** Tabs */
+            tabs: components["schemas"]["TabOut"][];
+            /** Unclaimed Tabs */
+            unclaimed_tabs: string[];
+            /** Employees */
+            employees: components["schemas"]["PersonOut"][];
+            /** Profiles Without Tab */
+            profiles_without_tab: components["schemas"]["PersonOut"][];
+            /** Job Tabs */
+            job_tabs: components["schemas"]["JobTabOut"][];
+            /** Cache Seconds */
+            cache_seconds: number;
+        };
         /** SpanOut */
         SpanOut: {
             /** Label */
@@ -6288,6 +6980,80 @@ export interface components {
             is_group: boolean;
             /** Amount */
             amount: string;
+        };
+        /** StatsOut */
+        StatsOut: {
+            /**
+             * Date From
+             * Format: date
+             */
+            date_from: string;
+            /**
+             * Date To
+             * Format: date
+             */
+            date_to: string;
+            /** Employee Id */
+            employee_id: string | null;
+            /** Employee Name */
+            employee_name: string | null;
+            /** Profile Names */
+            profile_names: string[];
+            /** Profile Missing */
+            profile_missing: boolean;
+            /** Applied */
+            applied: number;
+            /** Avg Score */
+            avg_score: number | null;
+            /** Active Bidders */
+            active_bidders: number;
+            /** Scraped */
+            scraped: number;
+            /** Scraped Bid */
+            scraped_bid: number;
+            /** Coverage Pct */
+            coverage_pct: number | null;
+            /** Outside Job List */
+            outside_job_list: number;
+            /** Duplicates */
+            duplicates: number;
+            /** Series */
+            series: components["schemas"]["DayPoint"][];
+            /** Score Buckets */
+            score_buckets: components["schemas"]["Count"][];
+            /** Resumes */
+            resumes: components["schemas"]["Count"][];
+            /** Companies */
+            companies: components["schemas"]["Count"][];
+            /** Roles */
+            roles: components["schemas"]["Count"][];
+            /** Profiles */
+            profiles: components["schemas"]["Count"][];
+            /** Employees */
+            employees: components["schemas"]["EmployeeRow"][];
+            data: components["schemas"]["DataState"];
+        };
+        /** TabCount */
+        TabCount: {
+            /** Name */
+            name: string;
+            /** Rows */
+            rows: number;
+        };
+        /** TabOut */
+        TabOut: {
+            /** Name */
+            name: string;
+            /** Rows */
+            rows: number;
+            /** Applied */
+            applied: number;
+            /** Last Date */
+            last_date: string | null;
+            /** Employee Id */
+            employee_id: string | null;
+            /** Employee Name */
+            employee_name: string | null;
         };
         /** TaskCreateIn */
         TaskCreateIn: {
@@ -9022,7 +9788,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EmployeeOut"];
+                    "application/json": components["schemas"]["EmployeeDetailOut"];
                 };
             };
             /** @description Validation Error */
@@ -12379,6 +13145,507 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stats_api_v1_bidding_stats_get: {
+        parameters: {
+            query?: {
+                date_from?: string | null;
+                date_to?: string | null;
+                employee_id?: string | null;
+                tab?: string | null;
+                refresh?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    daily_api_v1_bidding_daily_get: {
+        parameters: {
+            query?: {
+                date_from?: string | null;
+                date_to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_bids_api_v1_bidding_bids_get: {
+        parameters: {
+            query?: {
+                employee_id?: string | null;
+                tab?: string | null;
+                date_from?: string | null;
+                date_to?: string | null;
+                q?: string | null;
+                min_score?: number | null;
+                max_score?: number | null;
+                duplicates?: boolean;
+                outside?: boolean;
+                sort?: ("date" | "employee" | "profile" | "job" | "score" | "resume" | "list") | null;
+                desc?: boolean;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BidsPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_bids_api_v1_bidding_bids_export_get: {
+        parameters: {
+            query?: {
+                format?: "csv" | "xlsx" | "pdf";
+                employee_id?: string | null;
+                tab?: string | null;
+                date_from?: string | null;
+                date_to?: string | null;
+                q?: string | null;
+                min_score?: number | null;
+                max_score?: number | null;
+                duplicates?: boolean;
+                outside?: boolean;
+                sort?: ("date" | "employee" | "profile" | "job" | "score" | "resume" | "list") | null;
+                desc?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_jobs_api_v1_bidding_jobs_get: {
+        parameters: {
+            query?: {
+                region?: string[] | null;
+                role?: string[] | null;
+                ats?: string[] | null;
+                skill_level?: string[] | null;
+                status?: ("not_bid" | "applied") | null;
+                remote?: boolean | null;
+                recruiter?: boolean | null;
+                first_seen_from?: string | null;
+                first_seen_to?: string | null;
+                q?: string | null;
+                duplicates?: boolean;
+                mine?: boolean;
+                sort?: ("first_seen" | "job" | "type" | "ats" | "status") | null;
+                desc?: boolean;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobsPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_jobs_api_v1_bidding_jobs_export_get: {
+        parameters: {
+            query?: {
+                format?: "csv" | "xlsx" | "pdf";
+                region?: string[] | null;
+                role?: string[] | null;
+                ats?: string[] | null;
+                skill_level?: string[] | null;
+                status?: ("not_bid" | "applied") | null;
+                remote?: boolean | null;
+                recruiter?: boolean | null;
+                first_seen_from?: string | null;
+                first_seen_to?: string | null;
+                q?: string | null;
+                duplicates?: boolean;
+                mine?: boolean;
+                sort?: ("first_seen" | "job" | "type" | "ats" | "status") | null;
+                desc?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_daily_api_v1_bidding_daily_export_get: {
+        parameters: {
+            query?: {
+                format?: "csv" | "xlsx" | "pdf";
+                date_from?: string | null;
+                date_to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_profile_api_v1_bidding_me_profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileOut"];
+                };
+            };
+        };
+    };
+    set_my_profile_api_v1_bidding_me_profile_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_employee_profile_api_v1_bidding_employees__employee_id__profile_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sources_api_v1_bidding_sources_get: {
+        parameters: {
+            query?: {
+                refresh?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourcesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_api_v1_bidding_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataState"];
+                };
+            };
+        };
+    };
+    get_bidding_settings_api_v1_bidding_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsOut"];
+                };
+            };
+        };
+    };
+    update_bidding_settings_api_v1_bidding_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_connection_api_v1_bidding_settings_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectionTestIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionTestOut"];
                 };
             };
             /** @description Validation Error */

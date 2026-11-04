@@ -57,6 +57,7 @@ DEFAULT_ROLES: list[dict] = [
             "tasks.update_own": P,
             "calendar.manage.team": P,
             "leave.approve": P,
+            "bidding.read": A,
         },
     },
     {
@@ -71,6 +72,7 @@ DEFAULT_ROLES: list[dict] = [
             "salary.read": OWN,
             "projects.read": P,
             "tasks.update_own": OWN,
+            "bidding.read": OWN,
         },
     },
 ]

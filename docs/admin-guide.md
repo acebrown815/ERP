@@ -14,6 +14,8 @@ How to set up and run the ERP day to day. For servers, backups and monitoring se
 8. **Employees and departments** (Employees → Directory), then **salary formulas** (Employees → Salary Formulas) and assign each employee a formula.
 9. **Opening balances** (Accounting → Journal Entries → Opening balances) if you are moving from another system. Customers, suppliers, employees and projects can be imported (Settings → Data Import).
 
+**Bidding** (Settings → Bidding Sheets): under Connections, paste each sheet's web app URL and secret, Test, and Save (details in operations.md → Bidding sheets). Then give each bidder a *bidding profile name* for every tab their extension writes to (its Sheet Tab Name), or let them set their own on My Bidding → Profile. One employee can have several, and their bids are added together. A tab nobody has claimed is listed as unclaimed.
+
 **Backups** (Settings → Backups): a backup is made every night. Download one now and then and keep it off the server. Restoring a backup replaces all data; the data before the restore is kept as a "Before restore" backup. To move everything from one installation to another, back up and download on the old one, then upload and restore on the new one.
 
 ## 2. Every day
@@ -21,6 +23,7 @@ How to set up and run the ERP day to day. For servers, backups and monitoring se
 - **Record payments** (Accounting → Payment Entries → New payment). Customer payments can be split between employees (optional; if you split, it must cover 100%). Expenses can be tagged to an employee (it reduces their revenue) or a project.
 - **Projects**: tasks, the board, the timeline, milestones. Assignees move their own tasks and log time.
 - **Calendar**: meetings, company events, leave requests. Leave goes to approvers (Team Calendar → Leave requests); approved leave shows company-wide and sets capacity to 0 in Workload.
+- **Bidding**: Team Overview and Daily Report show who bid how much over a date range and with what match scores; Job List shows every scraped job, who bid on it and which were missed ("Not bid"). Employees see their own numbers on My Bidding. The Dashboard also shows the last 30 days: everyone's for administrators and project managers, and only their own for employees.
 
 ## 3. Every month (salary month)
 
@@ -54,7 +57,7 @@ How to set up and run the ERP day to day. For servers, backups and monitoring se
 |---|---|
 | Administrator | Everything, including reopening closed periods, formulas, salary cycle, roles |
 | Finance Manager | Payments, accounting, reports, salary board and closing salary periods, all projects' financials |
-| Project Manager | Their projects: tasks, milestones, team calendar, approving their team's leave |
-| Employee | Own salary (read-only), own tasks (move, log time), comments, own calendar and leave requests |
+| Project Manager | Their projects: tasks, milestones, team calendar, approving their team's leave; everyone's bidding numbers |
+| Employee | Own salary (read-only), own tasks (move, log time), comments, own calendar and leave requests; own bidding numbers and the shared job list |
 
 Permissions can be adjusted per role (Settings → Roles & Permissions); scopes are *own*, *project* or *all*.
