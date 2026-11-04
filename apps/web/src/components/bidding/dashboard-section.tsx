@@ -11,7 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/misc";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { ApiError } from "@/lib/api";
-import { lastDays, useSeesAllBids, useStats, type EmployeeRow, type Stats } from "@/lib/bidding";
+import { lastDays, useProfile, useSeesAllBids, useStats, type EmployeeRow, type Stats } from "@/lib/bidding";
+import { dashboardScope } from "@/lib/dashboard-scope";
 
 const DAYS = 30;
 const PEOPLE_SHOWN = 10;
@@ -56,7 +57,11 @@ function ByPerson({ rows }: { rows: EmployeeRow[] }) {
 
 function useDashboardStats() {
   const [range] = useState(() => lastDays(DAYS));
-  return useStats(range);
+  const seesAll = useSeesAllBids();
+  const profile = useProfile(); // a 404 just means no employee record
+  const { team, employeeId } = dashboardScope(profile.data, seesAll);
+  // Wait for the profile, so a bidder with a manager role never gets the team's numbers first.
+  return { stats: useStats(range, employeeId, null, !profile.isPending), team };
 }
 
 /**
@@ -64,21 +69,24 @@ function useDashboardStats() {
  * BiddingDashboardSection explains why (not linked, no profile names, or an error).
  */
 export function BiddingTiles() {
-  const all = useSeesAllBids();
-  const stats = useDashboardStats();
+  const { stats, team } = useDashboardStats();
   const s = stats.data;
   if (stats.isError || s?.profile_missing) return null;
   return (
     <>
-      <StatTile label={all ? "Bids today" : "My bids today"} value={s ? (s.series.at(-1)?.applied ?? 0) : undefined} hint={s && `Yesterday: ${s.series.at(-2)?.applied ?? 0}`} />
+      <StatTile label={team ? "Bids today" : "My bids today"} value={s ? (s.series.at(-1)?.applied ?? 0) : undefined} hint={s && `Yesterday: ${s.series.at(-2)?.applied ?? 0}`} />
       <StatTile
-        label={all ? `Bids, last ${DAYS} days` : `My bids, last ${DAYS} days`}
+        label={team ? `Bids, last ${DAYS} days` : `My bids, last ${DAYS} days`}
         value={s?.applied}
-        hint={s && all ? `${s.active_bidders} people bidding` : undefined}
+        hint={s && team ? `${s.active_bidders} people bidding` : undefined}
         spark={s && <Sparkline values={s.series.map((d) => d.applied)} label="Bids per day" />}
       />
-      <StatTile label="Average match score" value={s ? (s.avg_score ?? "—") : undefined} hint={`Last ${DAYS} days`} />
-      <StatTile label="Job list covered" value={s && pct(s.coverage_pct)} hint={s && `${s.scraped_bid} of ${s.scraped} scraped jobs, last ${DAYS} days`} />
+      <StatTile label={team ? "Average match score" : "My average match score"} value={s ? (s.avg_score ?? "—") : undefined} hint={`Last ${DAYS} days`} />
+      {team ? (
+        <StatTile label="Job list covered" value={s && pct(s.coverage_pct)} hint={s && `${s.scraped_bid} of ${s.scraped} scraped jobs, last ${DAYS} days`} />
+      ) : (
+        <StatTile label="My bids from the job list" value={s && s.applied - s.outside_job_list} hint={s && `${s.outside_job_list} found elsewhere, last ${DAYS} days`} />
+      )}
     </>
   );
 }
@@ -114,13 +122,12 @@ function Details({ s, all }: { s: Stats; all: boolean }) {
 }
 
 /**
- * The dashboard's bidding chart and breakdown. The API decides the scope: everyone's with "all" on bidding.read,
- * otherwise only the signed-in employee's. It loads on its own, so a slow sheet read never holds up the rest of the
- * dashboard.
+ * The dashboard's bidding chart and breakdown: the signed-in person's own numbers if they bid, or the team's for a
+ * manager who doesn't (dashboardScope). The API still enforces who may see what. It loads on its own, so a slow sheet
+ * read never holds up the rest of the dashboard.
  */
 export function BiddingDashboardSection() {
-  const all = useSeesAllBids();
-  const stats = useDashboardStats();
+  const { stats, team } = useDashboardStats();
   const s = stats.data;
   const unlinked = stats.error instanceof ApiError && stats.error.status === 404;
 
@@ -143,15 +150,15 @@ export function BiddingDashboardSection() {
       </CardContent></Card>
     );
   } else {
-    body = <Details s={s} all={all} />;
+    body = <Details s={s} all={team} />;
   }
 
   return (
     <section aria-labelledby="dashboard_bidding" className="mb-6">
       <div className="mb-3 flex items-center justify-between">
-        <h2 id="dashboard_bidding" className="text-base font-semibold">{all ? "Team bidding" : "My bidding"}</h2>
+        <h2 id="dashboard_bidding" className="text-base font-semibold">{team ? "Team bidding" : "My bidding"}</h2>
         <Button variant="ghost" size="sm" asChild>
-          <Link href={all ? "/bidding" : "/bidding/me"}>{all ? "Team overview" : "My bidding"} <ArrowRight /></Link>
+          <Link href={team ? "/bidding" : "/bidding/me"}>{team ? "Team overview" : "My bidding"} <ArrowRight /></Link>
         </Button>
       </div>
       {body}

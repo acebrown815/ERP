@@ -83,7 +83,7 @@ GET  /api/bidding/me/profile                      my profile name, tab found?, r
 PUT  /api/bidding/me/profile  {profile_name}      set my profile name (own row only)
 PUT  /api/bidding/employees/{id}/profile          admin / employees.manage
 POST /api/bidding/refresh                         drop the cache and pull again
-GET  /api/bidding/export/{bids|jobs|daily}.csv    via core/csv_export.py
+GET  /api/bidding/export/{bids|daily}.csv         via core/csv_export.py
 ```
 
 **Permissions** (`rbac/permissions.py`): `bidding.read` with scopes OWN / ALL. Defaults: Employee = OWN, Project Manager = ALL, Admin = all. Permissions are code-defined, so there is no schema change. The grant goes onto the already-seeded roles through *Settings → Roles & Permissions*, or a small data migration. With OWN scope, the summary, daily, employee and bids endpoints filter to the signed-in user's own tab. **`/jobs` is not scope-filtered**: everyone with `bidding.read` sees every job, its status, and who bid on it.
@@ -136,7 +136,7 @@ Nothing blocking. Open for later: whether employees should also see team-wide nu
 | `normalize.py` | `url_key` (port of the extension's `normalizeUrlForCache`), `job_identity` (port of the scraper's), tab-name matching, cell parsing |
 | `snapshot.py` | Builds the joined picture: bids → jobs by URL, then company + title; leaves out links only queued for Auto-Bid; duplicates |
 | `cache.py`, `deps.py` | In-memory snapshot, one shared fetch, keeps the last good data when a sheet fails. A background task started with the API reads the sheets at startup and at each age limit, so requests answer from memory |
-| `service.py`, `schemas.py`, `router.py` | Numbers and endpoints: `stats`, `daily`, `bids`, `jobs`, their `/export` (CSV/Excel/PDF), `me/profile`, `employees/{id}/profile`, `sources`, `refresh` |
+| `service.py`, `schemas.py`, `router.py` | Numbers and endpoints: `stats`, `daily`, `bids`, `jobs`, `/export` for daily (CSV/Excel/PDF) and bids (CSV/Excel); export the job list from its Google Sheet, `me/profile`, `employees/{id}/profile`, `sources`, `refresh` |
 
 - Employees: an employee can have **several** bidding profile names (tabs), each owned by one employee at most. Table `employee_bidding_profiles` (name unique, case-insensitive), migration `0012`, which replaces the single column added in `0010_bidding.py`. Reports group by employee, adding their tabs together; a tab nobody has claimed is its own row. `0010` also grants `bidding.read` to the existing Employee (own) and Project Manager (all) roles.
 - Permissions: `bidding.read` (own / all) and **`bidding.manage`** (all; Sources page and setting other people's profile names). Administrators hold both.

@@ -121,14 +121,15 @@ async def test_manager_sees_everyone(client_as: ClientFactory, admin) -> None:  
     assert export.status_code == 200 and export.headers["content-type"].startswith("text/csv")
     lines = list(csv.reader(io.StringIO(export.text.lstrip("﻿"))))
     assert lines[0][:4] == ["Date", "Employee", "Tab", "Title"] and len(lines) == 4
-    assert (await pm.get(f"{API}/jobs/export", params={"format": "xlsx"})).status_code == 200
 
-    # Job filters take several values, on the list and on its export.
+    assert (await pm.get(f"{API}/bids/export", params={"format": "pdf"})).status_code == 422
+    assert (await pm.get(f"{API}/bids/export", params={"format": "xlsx"})).status_code == 200
+
+    # Job filters take several values. The job list has no export: use the Google Sheet.
     one = (await pm.get(f"{API}/jobs", params={"role": "Data"})).json()["total"]
     two = (await pm.get(f"{API}/jobs", params={"role": ["Data", "Software"]})).json()["total"]
     assert one == 1 and two > one
-    export = await pm.get(f"{API}/jobs/export", params={"format": "csv", "role": ["Data", "Software"]})
-    assert len(list(csv.reader(io.StringIO(export.text.lstrip("\ufeff"))))) - 1 == two
+    assert (await pm.get(f"{API}/jobs/export", params={"format": "csv"})).status_code == 404
 
     daily_csv = await pm.get(f"{API}/daily/export", params={"date_from": "2026-11-01", "date_to": "2026-11-03"})
     assert daily_csv.status_code == 200 and "Top resumes" in daily_csv.text
@@ -147,6 +148,19 @@ async def test_manager_sees_everyone(client_as: ClientFactory, admin) -> None:  
 
     profile = (await admin.get(f"/api/v1/employees/{carol}")).json()
     assert profile["bidding_profile_names"] == ["Carol"]
+
+
+async def test_a_manager_who_bids_can_get_only_their_own_numbers(client_as: ClientFactory) -> None:
+    # What the dashboard asks for: real bidders hold both the Employee and Project Manager roles.
+    pm = await bidder(client_as, "Peter PM", "project_manager")
+    await pm.put(f"{API}/me/profile", json={"profile_names": ["Carol"]})
+    dates = {"date_from": "2026-10-01", "date_to": "2026-11-03"}
+    own = (await pm.get(f"{API}/stats", params={**dates, "employee_id": pm.employee_id})).json()
+    team = (await pm.get(f"{API}/stats", params=dates)).json()
+    assert own["applied"] == 1 and team["applied"] == 5
+    assert own["employees"] == [] and len(team["employees"]) > 1
+    assert [c["name"] for c in own["resumes"]] == ["3"] and len(team["resumes"]) > 1
+    assert own["outside_job_list"] == 1
 
 
 async def test_employee_with_several_profile_names(client_as: ClientFactory, admin) -> None:  # type: ignore[no-untyped-def]
@@ -195,24 +209,9 @@ async def test_access_rules(client_as: ClientFactory) -> None:
     res = await unlinked.get(f"{API}/me/profile")
     assert res.status_code == 404 and "not linked" in res.json()["detail"]
     assert (await unlinked.get(f"{API}/jobs")).status_code == 200  # the job list needs no employee record
-    # "Mine" with no employee record is just an empty list, on the page and its export.
+    # "Mine" with no employee record is just an empty list.
     mine = await unlinked.get(f"{API}/jobs", params={"mine": True})
     assert mine.status_code == 200 and mine.json()["total"] == 0
-    assert (
-        len((await unlinked.get(f"{API}/jobs/export", params={"format": "csv", "mine": True})).text.splitlines()) == 1
-    )
-
-
-async def test_job_export_follows_mine_and_sort(client_as: ClientFactory) -> None:
-    bob = await bidder(client_as, "Bob Jones")
-    await bob.put(f"{API}/me/profile", json={"profile_names": ["Bob Jones"]})
-    rows = list(csv.reader(io.StringIO((await bob.get(f"{API}/jobs/export", params={"mine": True})).text.lstrip("﻿"))))
-    assert len(rows) == 2 and rows[1][3] == "Acme"
-    assert rows[0][1] == "Listed under" and rows[1][1] == "US · Software, EU · Software"
-
-    everyone = await bob.get(f"{API}/jobs/export", params={"sort": "job", "desc": True})
-    rows = list(csv.reader(io.StringIO(everyone.text.lstrip("﻿"))))
-    assert [r[3] for r in rows[1:]] == ["Omega", "Beta", "Acme"]
 
 
 async def test_sorting_covers_every_page(client_as: ClientFactory) -> None:

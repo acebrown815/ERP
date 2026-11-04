@@ -2507,23 +2507,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/bidding/jobs/export": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Export Jobs */
-        get: operations["export_jobs_api_v1_bidding_jobs_export_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/bidding/daily/export": {
         parameters: {
             query?: never;
@@ -13271,7 +13254,7 @@ export interface operations {
     export_bids_api_v1_bidding_bids_export_get: {
         parameters: {
             query?: {
-                format?: "csv" | "xlsx" | "pdf";
+                format?: "csv" | "xlsx";
                 employee_id?: string | null;
                 tab?: string | null;
                 date_from?: string | null;
@@ -13343,51 +13326,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobsPage"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    export_jobs_api_v1_bidding_jobs_export_get: {
-        parameters: {
-            query?: {
-                format?: "csv" | "xlsx" | "pdf";
-                region?: string[] | null;
-                role?: string[] | null;
-                ats?: string[] | null;
-                skill_level?: string[] | null;
-                status?: ("not_bid" | "applied") | null;
-                remote?: boolean | null;
-                recruiter?: boolean | null;
-                first_seen_from?: string | null;
-                first_seen_to?: string | null;
-                q?: string | null;
-                duplicates?: boolean;
-                mine?: boolean;
-                sort?: ("first_seen" | "job" | "type" | "ats" | "status") | null;
-                desc?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
