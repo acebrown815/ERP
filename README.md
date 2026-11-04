@@ -46,6 +46,18 @@ npm run dev
 npm run gen:api          # regenerate src/types/api.ts after API changes (API must be running)
 ```
 
+**Running them day to day:** once the steps above are done, `tools/dev.py` runs everything in the background, with logs in `.dev/`. Use `py` on Windows, or `python3`.
+
+```bash
+py tools/dev.py start            # database, API, worker and web (or name one: db, api, worker, web)
+py tools/dev.py status           # what is running, and how much memory it uses
+py tools/dev.py restart web      # stop and start again; also finds servers started by hand
+py tools/dev.py logs api         # the last lines of a log
+py tools/dev.py stop             # everything but the database (`stop db` stops that too)
+```
+
+Restart `api` after changing API code: it runs without `--reload`, which hangs on Windows when the server has no terminal of its own. Restart `web` when `status` warns about its memory: `next dev` keeps what each rebuild uses, and pages get slow long before it runs out.
+
 ## Tests and checks
 
 ```bash
