@@ -169,11 +169,12 @@ export function lastDays(n: number): Range {
   return { from: isoDay(from), to: isoDay(to) };
 }
 
-export function useStats(range: Range, employeeId?: string | null, tab?: string | null) {
+export function useStats(range: Range, employeeId?: string | null, tab?: string | null, enabled = true) {
   return useQuery({
     queryKey: ["bidding", "stats", range, employeeId ?? null, tab ?? null],
     queryFn: () => api.get<Stats>("/bidding/stats", { date_from: range.from, date_to: range.to, employee_id: employeeId, tab }),
     placeholderData: keepPreviousData,
+    enabled,
   });
 }
 

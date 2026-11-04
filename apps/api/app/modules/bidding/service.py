@@ -1,5 +1,6 @@
 """Aggregations over a Snapshot. Pure functions: the router supplies the snapshot, the people and the scope."""
 
+import re
 import uuid
 from collections import Counter
 from collections.abc import Callable, Collection, Iterable
@@ -30,6 +31,7 @@ from app.modules.bidding.snapshot import Bid, JobStatus, ScrapedJob, Snapshot, S
 
 MAX_RANGE_DAYS = 366
 TOP_RESUMES = 3  # how many the daily export lists; the pages show the same number
+TAILORED_SUFFIX = re.compile(r"\s+—\s+tailored\s*$", re.IGNORECASE)
 SCORE_BANDS = [("90–100", 90, 101), ("80–89", 80, 90), ("70–79", 70, 80), ("60–69", 60, 70), ("Under 60", 0, 60)]
 
 
@@ -268,14 +270,21 @@ def _buckets(scores: list[float | None]) -> list[Count]:
     return out
 
 
+def base_resume(name: str) -> str:
+    """The extension names a tailored copy "<resume> — Tailored" (BidExtension content.js)."""
+    return TAILORED_SUFFIX.sub("", name)
+
+
 def _resumes(bids: list[Bid]) -> list[Count]:
-    """Every resume used, most used first. Differences in capitals and spacing are the same resume."""
+    """Every resume used, most used first. A tailored copy counts as its resume, and differences in capitals and
+    spacing are the same resume."""
     names: dict[str, str] = {}
     counts: Counter[str] = Counter()
     for b in bids:
         if b.resume:
-            key = name_key(b.resume)
-            names.setdefault(key, b.resume)
+            name = base_resume(b.resume)
+            key = name_key(name)
+            names.setdefault(key, name)
             counts[key] += 1
     return [Count(name=names[k], count=v) for k, v in counts.most_common()]
 

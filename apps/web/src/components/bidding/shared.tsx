@@ -330,7 +330,7 @@ export function BidsTable({ employeeId, tab, showEmployee = true, initialRange }
         </Select>
         <label className="flex h-9 items-center gap-1.5 text-sm"><Checkbox checked={f.duplicates} onChange={(e) => set({ duplicates: e.target.checked })} /> Duplicates</label>
         <label className="flex h-9 items-center gap-1.5 text-sm"><Checkbox checked={f.outside} onChange={(e) => set({ outside: e.target.checked })} /> Not in job list</label>
-        <ExportMenu path="/bidding/bids/export" params={Object.fromEntries(Object.entries(query).map(([k, v]) => [k, v === undefined ? undefined : String(v)]))} />
+        <ExportMenu path="/bidding/bids/export" formats={["csv", "xlsx"]} params={Object.fromEntries(Object.entries(query).map(([k, v]) => [k, v === undefined ? undefined : String(v)]))} />
       </div>
       <DataTable
         columns={columns}

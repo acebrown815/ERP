@@ -417,6 +417,33 @@ def test_every_resume_is_listed_and_spacing_or_capitals_do_not_split_one() -> No
     assert name_key(s.resumes[0].name) == "go dev" and s.resumes[0].count == 2
 
 
+def test_a_tailored_copy_counts_as_its_resume() -> None:
+    assert service.base_resume("4. Go_AI — Tailored") == "4. Go_AI"
+    assert service.base_resume("4. Go_AI") == "4. Go_AI"
+    assert service.base_resume("Tailored Go - Senior") == "Tailored Go - Senior"  # only that exact ending
+    rows = [
+        bid_row(2, "https://a/1", company="A", date="2026-11-03", resume="4. Go_AI"),
+        bid_row(3, "https://a/2", company="B", date="2026-11-03", resume="4. Go_AI — Tailored"),
+        bid_row(4, "https://a/3", company="C", date="2026-11-03", resume="9. Only Tailored — Tailored"),
+    ]
+    snap = snapshot.build(
+        [sheets.BidTab("Dana", BID_HEADER, rows)],
+        [],
+        now=NOW,
+        bids_source=snapshot.SourceState(True, NOW),
+        jobs_source=snapshot.SourceState(True, NOW),
+    )
+    nov3 = date(2026, 11, 3)
+    s = service.stats(snap, people(), date_from=nov3, date_to=nov3, tab_keys=None, with_employees=True)
+    assert [(c.name, c.count) for c in s.resumes] == [("4. Go_AI", 2), ("9. Only Tailored", 1)]
+    row = next(r for r in s.employees if r.applied)
+    assert [c.count for c in row.resumes] == [2, 1]
+    day = service.daily(snap, people(), date_from=nov3, date_to=nov3, tab_keys=None)
+    assert next(r for r in day.rows if r.applied).resumes[0].count == 2
+    # The bid itself still shows what was sent.
+    assert snap.bids[1].resume == "4. Go_AI — Tailored"
+
+
 def test_a_bid_with_no_date_sorts_after_dated_bids() -> None:
     rows = [
         bid_row(2, "https://a/1", company="Acme"),

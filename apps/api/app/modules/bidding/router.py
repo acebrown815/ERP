@@ -231,7 +231,7 @@ async def list_bids(
 
 @router.get("/bids/export")
 async def export_bids(
-    format: ExportFormat = "csv",
+    format: Literal["csv", "xlsx"] = "csv",  # no PDF: thousands of rows with long links don't fit a page
     employee_id: uuid.UUID | None = None,
     tab: Text = None,
     date_from: date | None = None,
@@ -330,60 +330,6 @@ async def list_jobs(
         facets=service.facets(snap),
         data=service.data_state(snap),
     )
-
-
-@router.get("/jobs/export")
-async def export_jobs(
-    format: ExportFormat = "csv",
-    region: Choices = None,
-    role: Choices = None,
-    ats: Choices = None,
-    skill_level: Choices = None,
-    status: Literal["not_bid", "applied"] | None = None,
-    remote: bool | None = None,
-    recruiter: bool | None = None,
-    first_seen_from: date | None = None,
-    first_seen_to: date | None = None,
-    q: Text = None,
-    duplicates: bool = False,
-    mine: bool = False,
-    sort: service.JobSort | None = None,
-    desc: bool = False,
-    user: CurrentUser = Reader,
-    session: AsyncSession = Depends(get_session),
-    cache: SnapshotCache = Depends(get_cache),
-) -> Any:
-    people = await _people(session)
-    tab_keys = await _mine_keys(session, user, mine)
-    snap = await cache.get()
-    rows = service.filter_jobs(
-        snap,
-        region=region,
-        role=role,
-        ats=ats,
-        skill_level=skill_level,
-        status=status,
-        remote=remote,
-        recruiter=recruiter,
-        first_seen_from=first_seen_from,
-        first_seen_to=first_seen_to,
-        q=q,
-        duplicates_only=duplicates,
-        tab_keys=tab_keys,
-    )
-    header = ["First seen", "Listed under", "Title", "Company", "Location", "ATS", "Skill level", "Salary"]
-    header += ["Status", "Bid by", "URL"]
-    out = []
-    for j in service.sort_jobs(rows, sort, desc):
-        o = service.job_out(j, people)
-        bidders = ", ".join(b.employee_name or b.tab for b in o.bids)
-        out.append(
-            [
-                *(o.first_seen, ", ".join(o.listings), o.title, o.company, o.location, o.ats, o.skill_level, o.salary),
-                *(o.status.replace("_", " "), bidders, o.url),
-            ]
-        )
-    return export_response(format, "jobs", header, out, title="Scraped jobs")
 
 
 @router.get("/daily/export")

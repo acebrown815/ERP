@@ -9,7 +9,6 @@ import { Suspense, useState } from "react";
 
 import { DataBar, JobLink, Score, StatusBadge } from "@/components/bidding/shared";
 import { DataTable } from "@/components/erp/data-table";
-import { ExportMenu } from "@/components/erp/export-menu";
 import { MultiSelect } from "@/components/erp/multi-select";
 import { PageHeader } from "@/components/erp/page-header";
 import { EmptyState } from "@/components/erp/states";
@@ -112,7 +111,6 @@ function JobList() {
       <PageHeader
         title="Job list"
         description="Every job the scraper found, and who bid on it. Bids are matched by link, then by company and title."
-        actions={<ExportMenu path="/bidding/jobs/export" params={{ q: query.q, status: query.status, region: f.region, role: f.role, ats: f.ats, skill_level: f.skill_level, first_seen_from: query.first_seen_from, first_seen_to: query.first_seen_to, duplicates: f.duplicates ? "true" : undefined, mine: f.mine ? "true" : undefined, sort: query.sort, desc: query.desc ? "true" : undefined }} />}
       />
       <DataBar data={r?.data} />
       <Card>

@@ -23,7 +23,7 @@ How to set up and run the ERP day to day. For servers, backups and monitoring se
 - **Record payments** (Accounting → Payment Entries → New payment). Customer payments can be split between employees (optional; if you split, it must cover 100%). Expenses can be tagged to an employee (it reduces their revenue) or a project.
 - **Projects**: tasks, the board, the timeline, milestones. Assignees move their own tasks and log time.
 - **Calendar**: meetings, company events, leave requests. Leave goes to approvers (Team Calendar → Leave requests); approved leave shows company-wide and sets capacity to 0 in Workload.
-- **Bidding**: Team Overview and Daily Report show who bid how much over a date range and with what match scores; Job List shows every scraped job, who bid on it and which were missed ("Not bid"). Employees see their own numbers on My Bidding. The Dashboard also shows the last 30 days: everyone's for administrators and project managers, and only their own for employees.
+- **Bidding**: Team Overview and Daily Report show who bid how much over a date range and with what match scores; Job List shows every scraped job, who bid on it and which were missed ("Not bid"). Employees see their own numbers on My Bidding. The Dashboard also shows the last 30 days: anyone with a bidding profile name sees their own numbers, even with a Project Manager role, and a manager with no profile name sees everyone's. It only chooses what the Dashboard shows: a Project Manager can still see everyone on Team Overview, Daily Report and All Bids.
 
 ## 3. Every month (salary month)
 
