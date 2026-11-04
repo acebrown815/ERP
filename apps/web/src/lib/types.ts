@@ -30,6 +30,7 @@ export type Ledger = S["LedgerOut"];
 export type Party = S["PartyOut"];
 export type Organization = S["OrganizationOut"];
 export type Employee = S["EmployeeOut"];
+export type EmployeeDetail = S["EmployeeDetailOut"];
 export type Department = S["DepartmentOut"];
 export type Project = S["ProjectOut"];
 export type ProjectMember = S["MemberOut"];

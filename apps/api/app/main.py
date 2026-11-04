@@ -1,3 +1,6 @@
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -20,6 +23,8 @@ from app.modules.audit.router import router as audit_router
 from app.modules.auth import setup as auth_setup
 from app.modules.auth.router import auth_router, users_router
 from app.modules.backups.router import router as backups_router
+from app.modules.bidding.deps import run_refresher as run_bidding_refresher
+from app.modules.bidding.router import router as bidding_router
 from app.modules.calendar.router import router as calendar_router
 from app.modules.categories.router import router as categories_router
 from app.modules.compensation import setup as compensation_setup
@@ -95,7 +100,17 @@ ROUTERS = (
     calendar_router,
     system_router,
     backups_router,
+    bidding_router,
 )
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    refresher = asyncio.create_task(run_bidding_refresher())
+    try:
+        yield
+    finally:
+        refresher.cancel()
 
 
 def create_app() -> FastAPI:
@@ -110,6 +125,7 @@ def create_app() -> FastAPI:
         docs_url="/api/docs",
         redoc_url=None,
         openapi_url="/api/openapi.json",
+        lifespan=lifespan,
     )
     app.add_middleware(RequestContextMiddleware)
     install_error_handlers(app)

@@ -7,6 +7,7 @@ import {
   Briefcase,
   Building2,
   CalendarClock,
+  CalendarCheck,
   CalendarDays,
   CalendarRange,
   Calculator,
@@ -29,9 +30,13 @@ import {
   PieChart,
   ReceiptText,
   Scale,
+  Search,
+  Send,
+  Sheet,
   Settings,
   ShieldCheck,
   Tags,
+  Target,
   TrendingUp,
   Truck,
   Upload,
@@ -49,6 +54,8 @@ export type NavItem = {
   icon: LucideIcon;
   /** Visible when the user holds any of these permissions. Empty = every signed-in user. */
   anyOf?: string[];
+  /** Visible only with company-wide ("all") scope on this permission, e.g. team-level bidding reports. */
+  allScope?: string;
   /** Phase in which the screen ships (docs/architecture.md, Section 18). Undefined = available now. */
   phase?: number;
 };
@@ -80,6 +87,17 @@ export const NAV: NavSection[] = [
       { label: "Journal Entries", href: "/accounting/journal-entries", icon: NotebookPen, anyOf: ["journals.post", "reports.financial"] },
       { label: "Chart of Accounts", href: "/accounting/chart-of-accounts", icon: ListTree, anyOf: ["accounts.read"] },
       { label: "General Ledger", href: "/accounting/general-ledger", icon: BookOpenText, anyOf: ["reports.financial"] },
+    ],
+  },
+  {
+    label: "Bidding",
+    icon: Target,
+    items: [
+      { label: "My Bidding", href: "/bidding/me", icon: Target, anyOf: ["bidding.read"] },
+      { label: "Team Overview", href: "/bidding", icon: Gauge, allScope: "bidding.read" },
+      { label: "Daily Report", href: "/bidding/daily", icon: CalendarCheck, allScope: "bidding.read" },
+      { label: "All Bids", href: "/bidding/bids", icon: Send, allScope: "bidding.read" },
+      { label: "Job List", href: "/bidding/jobs", icon: Search, anyOf: ["bidding.read"] },
     ],
   },
   {
@@ -150,6 +168,7 @@ export const NAV: NavSection[] = [
       { label: "Accounting Periods", href: "/settings/periods", icon: CalendarRange, anyOf: ["periods.close", "reports.financial"] },
       { label: "Salary Cycle", href: "/settings/salary-cycle", icon: CalendarClock, anyOf: ["salary.read", "salary.configure_cycle"] },
       { label: "Data Import", href: "/settings/imports", icon: Upload, anyOf: ["imports.manage"] },
+      { label: "Bidding Sheets", href: "/settings/bidding", icon: Sheet, anyOf: ["bidding.manage"] },
       { label: "Backups", href: "/settings/backups", icon: DatabaseBackup, anyOf: ["backups.manage"] },
       { label: "Audit Log", href: "/settings/audit-logs", icon: History, anyOf: ["audit.read"] },
       { label: "System Checks", href: "/settings/system", icon: HeartPulse, anyOf: ["audit.read"] },
@@ -158,6 +177,7 @@ export const NAV: NavSection[] = [
 ];
 
 export function canSee(item: NavItem, permissions: Record<string, string>): boolean {
+  if (item.allScope && permissions[item.allScope] !== "all") return false;
   return !item.anyOf?.length || item.anyOf.some((p) => p in permissions);
 }
 

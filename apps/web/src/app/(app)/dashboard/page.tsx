@@ -3,8 +3,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowRight, CalendarDays, ChevronDown, ChevronRight, Diamond, Flag, ListChecks, Plus } from "lucide-react";
 import Link from "next/link";
-import { Fragment, useState } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 
+import { BiddingDashboardSection, BiddingTiles } from "@/components/bidding/dashboard-section";
 import { num, PeriodChart, SERIES } from "@/components/charts/charts";
 import { PageHeader } from "@/components/erp/page-header";
 import { shortLabel } from "@/components/reports/shared";
@@ -38,7 +39,11 @@ function Kpi({ label, value, base, tone, hint }: { label: string; value: string 
   );
 }
 
-function FinanceOverview() {
+function TopTiles({ children }: { children: ReactNode }) {
+  return <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{children}</div>;
+}
+
+function FinanceOverview({ tiles }: { tiles: ReactNode }) {
   const base = useCompany().data?.base_currency ?? "USD";
   const currencies = useCurrencies();
   const holdings = useQuery({ queryKey: ["holdings"], queryFn: () => api.get<Holdings>("/reports/holdings") });
@@ -59,7 +64,7 @@ function FinanceOverview() {
     : undefined;
   return (
     <>
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <TopTiles>
         <Kpi
           label="Cash, bank & wallets"
           value={h?.market_total}
@@ -80,7 +85,8 @@ function FinanceOverview() {
           tone={d && sign(d.profit) < 0 ? "bad" : "good"}
           hint={[span, prev && `${prev.label}: ${formatAmount(prev.profit)}`].filter(Boolean).join(" · ")}
         />
-      </div>
+        {tiles}
+      </TopTiles>
       {monthly.data && monthly.data.rows.some((m) => sign(m.income) || sign(m.expenses) || sign(m.salary_paid)) && (
         <Card className="mb-6">
           <CardHeader className="flex-row items-center justify-between">
@@ -299,7 +305,7 @@ function AssetsByCurrency({ holdings }: { holdings: Holdings }) {
 
 /** Employee view of the money side: own revenue, expenses and salary (from /me/salary) and own payments.
  * The API scopes both to the signed-in employee, so nothing about colleagues or company totals shows. */
-function EmployeeOverview({ showRevenue }: { showRevenue: boolean }) {
+function EmployeeOverview({ showRevenue, tiles }: { showRevenue: boolean; tiles: ReactNode }) {
   const base = useCompany().data?.base_currency ?? "USD";
   const currencies = useCurrencies();
   const salary = useQuery({ queryKey: ["me-salary"], queryFn: () => api.get<EmployeeSalary>("/me/salary"), retry: false });
@@ -309,13 +315,18 @@ function EmployeeOverview({ showRevenue }: { showRevenue: boolean }) {
     enabled: salary.isSuccess,
   });
   if (salary.isError) {
-    return salary.error instanceof ApiError && salary.error.status === 404 ? (
-      <Card className="mb-6">
-        <CardContent className="py-4 text-sm text-muted-foreground">
-          Your sign-in isn&apos;t linked to an employee record yet, so there are no revenue or salary figures to show. Ask an administrator to link it.
-        </CardContent>
-      </Card>
-    ) : null;
+    return (
+      <>
+        {salary.error instanceof ApiError && salary.error.status === 404 && (
+          <Card className="mb-6">
+            <CardContent className="py-4 text-sm text-muted-foreground">
+              Your sign-in isn&apos;t linked to an employee record yet, so there are no revenue or salary figures to show. Ask an administrator to link it.
+            </CardContent>
+          </Card>
+        )}
+        {tiles && <TopTiles>{tiles}</TopTiles>}
+      </>
+    );
   }
   const s = salary.data;
   const cur = s?.current;
@@ -325,7 +336,7 @@ function EmployeeOverview({ showRevenue }: { showRevenue: boolean }) {
   const prev = s?.statements.find((x) => x.period_id !== cur?.period_id);
   return (
     <>
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <TopTiles>
         {showRevenue && (
           <>
             <Kpi label="My revenue this month" value={s ? (cur?.gross_revenue ?? "0") : undefined} base={base}
@@ -338,7 +349,8 @@ function EmployeeOverview({ showRevenue }: { showRevenue: boolean }) {
           hint={[cur?.period_status === "open" ? "Projected from revenue so far" : cur?.period_label, cur && sign(cur.paid) ? `${formatAmount(cur.paid)} paid` : undefined].filter(Boolean).join(" · ")} />
         <Kpi label="Salary owed to me" value={s?.balance} base={base} tone={s && sign(s.balance) > 0 ? "good" : undefined}
           hint={s ? `${formatAmount(s.paid_total)} paid of ${formatAmount(s.calculated_total)} earned in total` : undefined} />
-      </div>
+        {tiles}
+      </TopTiles>
       {months.some((m) => sign(m.gross_revenue) || sign(m.expenses) || sign(m.calculated)) && (
         <Card className="mb-6">
           <CardHeader className="flex-row items-center justify-between">
@@ -455,6 +467,8 @@ export default function DashboardPage() {
   const firstName = me.full_name.split(/\s+/)[0];
   const finance = "reports.financial" in me.permissions;
   const mySalary = "salary.read" in me.permissions;
+  const bidding = "bidding.read" in me.permissions;
+  const biddingTiles = bidding ? <BiddingTiles /> : null;
   const quickLinks = [
     { href: "/accounting/payment-entries/new", label: "Record a payment", show: "payments.create" in me.permissions },
     { href: "/parties/customers", label: "Customers", show: "parties.read" in me.permissions },
@@ -474,7 +488,14 @@ export default function DashboardPage() {
         title={`Welcome, ${firstName}`}
         description={finance ? "This month at a glance, from the posted ledger." : mySalary ? "Your month at a glance: your revenue, expenses, salary and payments." : undefined}
       />
-      {finance ? <FinanceOverview /> : mySalary && <EmployeeOverview showRevenue={"revenue.read" in me.permissions} />}
+      {finance ? (
+        <FinanceOverview tiles={biddingTiles} />
+      ) : mySalary ? (
+        <EmployeeOverview showRevenue={"revenue.read" in me.permissions} tiles={biddingTiles} />
+      ) : (
+        biddingTiles && <TopTiles>{biddingTiles}</TopTiles>
+      )}
+      {bidding && <BiddingDashboardSection />}
       <div className="grid gap-6 lg:grid-cols-3">
         <MyWeek />
         <Card>

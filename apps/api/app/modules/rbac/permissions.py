@@ -78,6 +78,9 @@ _DEFINITIONS: list[Permission] = [
     Permission("calendar.manage.company", "Manage company calendar", "Calendar"),
     Permission("calendar.manage.team", "Manage team calendars", "Calendar", PROJECT_OR_ALL),
     Permission("leave.approve", "Approve leave", "Calendar", PROJECT_OR_ALL),
+    # Bidding analytics (read live from the Google Sheets; docs/bidding-analytics-plan.md)
+    Permission("bidding.read", "View bidding analytics and job list", "Bidding", (Scope.OWN, Scope.ALL)),
+    Permission("bidding.manage", "Manage bidding sources and profile names", "Bidding"),
 ]
 
 PERMISSIONS: dict[str, Permission] = {p.key: p for p in _DEFINITIONS}

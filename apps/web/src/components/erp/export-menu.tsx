@@ -12,9 +12,13 @@ const FORMATS = [
 ] as const;
 
 /** Download a report as CSV, Excel or PDF: same columns and totals as on screen. `path` is under /api/v1. */
-export function ExportMenu({ path, params = {}, label = "Export" }: { path: string; params?: Record<string, string | undefined | null>; label?: string }) {
+export function ExportMenu({ path, params = {}, label = "Export" }: { path: string; params?: Record<string, string | string[] | undefined | null>; label?: string }) {
   const href = (format: string) => {
-    const qs = new URLSearchParams(Object.entries({ ...params, format }).filter(([, v]) => v) as [string, string][]);
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries({ ...params, format })) {
+      if (Array.isArray(v)) v.forEach((item) => qs.append(k, item));
+      else if (v) qs.set(k, v);
+    }
     return `/api/v1${path}?${qs}`;
   };
   return (

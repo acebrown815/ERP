@@ -10,6 +10,7 @@ def import_all_models() -> None:
     import app.modules.attribution.models
     import app.modules.audit.models
     import app.modules.auth.models
+    import app.modules.bidding.models
     import app.modules.calendar.models
     import app.modules.categories.models
     import app.modules.compensation.models

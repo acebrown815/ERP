@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Receipt, Repeat } from "lucide-react";
+import { ArrowLeft, Receipt, Repeat, Target } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
@@ -18,7 +18,7 @@ import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui
 import { api, ApiError } from "@/lib/api";
 import { useDepartments, useFormulas } from "@/lib/queries";
 import { useCan, useMe } from "@/lib/session";
-import type { CompAssignment, Employee } from "@/lib/types";
+import type { CompAssignment, Employee, EmployeeDetail } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 
 const STATUS_VARIANT = { active: "success", on_leave: "warning", terminated: "muted" } as const;
@@ -69,7 +69,7 @@ export default function EmployeePage() {
   const me = useMe();
   const departments = useDepartments();
   const [changing, setChanging] = useState(false);
-  const employee = useQuery({ queryKey: ["employee", id], queryFn: () => api.get<Employee>(`/employees/${id}`) });
+  const employee = useQuery({ queryKey: ["employee", id], queryFn: () => api.get<EmployeeDetail>(`/employees/${id}`) });
   const assignments = useQuery({
     queryKey: ["comp-assignments", id],
     queryFn: () => api.get<CompAssignment[]>("/comp-assignments", { employee_id: id }),
@@ -109,6 +109,19 @@ export default function EmployeePage() {
               <dt className="text-muted-foreground">Started</dt><dd>{formatDate(e.start_date)}</dd>
               {e.end_date && (<><dt className="text-muted-foreground">Left</dt><dd>{formatDate(e.end_date)}</dd></>)}
               <dt className="text-muted-foreground">Sign-in</dt><dd>{e.user_id ? "Linked" : "No account linked"}</dd>
+              {can("bidding.read") && (
+                <>
+                  <dt className="text-muted-foreground">Bidding tabs</dt>
+                  <dd className="flex flex-wrap items-center gap-2">
+                    {e.bidding_profile_names.length ? e.bidding_profile_names.join(", ") : <span className="text-muted-foreground">Not set</span>}
+                    {(me.permissions["bidding.read"] === "all" || e.user_id === me.id) && (
+                      <Link href={e.user_id === me.id ? "/bidding/me" : `/bidding/employee?id=${e.id}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                        <Target className="size-3" aria-hidden /> Bidding
+                      </Link>
+                    )}
+                  </dd>
+                </>
+              )}
             </dl>
           </CardContent>
         </Card>
