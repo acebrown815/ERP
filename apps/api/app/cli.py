@@ -1,6 +1,6 @@
 """Operational commands.
 
-python -m app.cli migrate                 # alembic upgrade head
+python -m app.cli migrate [--seed]        # alembic upgrade head; --seed also adds what a release introduced
 python -m app.cli seed [--company NAME]   # roles, currencies, categories, company settings
 python -m app.cli create-admin --email E --name N   (password from ERP_ADMIN_PASSWORD or prompt)
 python -m app.cli demo                    # demo users for each role (development only)
@@ -71,6 +71,22 @@ async def seed_all(session: Any, company: str) -> dict[str, int]:
 async def seed(company: str) -> None:
     async with SessionLocal() as session:
         created = await seed_all(session, company)
+        await session.commit()
+    print("seeded: " + ", ".join(f"{k} +{v}" for k, v in created.items()))
+
+
+async def seed_existing() -> None:
+    """Every deploy: add what a new release introduced. A first install is left alone, because seeding it by hand
+    is what names the company, and a company created here would keep the default name."""
+    from app.modules.settings import api as settings
+
+    async with SessionLocal() as session:
+        try:
+            company = await settings.get_company(session)
+        except NotFound:
+            print("seed skipped: no company yet (first install: run `seed --company NAME`)")
+            return
+        created = await seed_all(session, company.name)
         await session.commit()
     print("seeded: " + ", ".join(f"{k} +{v}" for k, v in created.items()))
 
@@ -234,7 +250,8 @@ async def demo_salary() -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("migrate")
+    p_migrate = sub.add_parser("migrate")
+    p_migrate.add_argument("--seed", action="store_true", help="then add what a release introduced, if already set up")
     p_seed = sub.add_parser("seed")
     p_seed.add_argument("--company", default="My Company")
     p_admin = sub.add_parser("create-admin")
@@ -246,6 +263,8 @@ def main(argv: list[str] | None = None) -> int:
     import_all_models()
     if args.cmd == "migrate":
         migrate()
+        if args.seed:
+            _run(seed_existing())
     elif args.cmd == "seed":
         _run(seed(args.company))
     elif args.cmd == "create-admin":

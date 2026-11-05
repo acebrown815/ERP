@@ -345,7 +345,7 @@ One PR per phase, starting from an up-to-date `main`.
 ## 11. Rollout
 
 1. Deploy. `migrate` applies 0013 automatically.
-2. Run `python -m app.cli seed` ([operations.md](operations.md)). It adds the new roles, purpose and account, and leaves existing rows alone. Until it runs, the purpose doesn't exist and nothing else changes.
+2. Run `python -m app.cli seed` ([operations.md](operations.md)) if this release went out before deploys ran the seed. It adds the new roles, purpose and account, and leaves existing rows alone. Until it runs, the purpose doesn't exist and nothing else changes.
 3. Pilot with one hire: staff create the employee record as a hired manager with a login. An employee then creates a project and selects the hire. For an existing project, staff set the hire, and make sure the manager is the employee earning the revenue.
 4. Run one payment in an open salary period, and check the manager's salary, project financials and the hire's view.
 

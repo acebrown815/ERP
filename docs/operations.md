@@ -5,7 +5,7 @@ For whoever runs the ERP server. The stack is one VM with Docker Compose (`infra
 | Service | What it does |
 |---|---|
 | `postgres` | PostgreSQL 16, data in the `pgdata` volume |
-| `migrate` | Runs database migrations on every start, then exits |
+| `migrate` | Runs database migrations and the seed on every start, then exits |
 | `api` | FastAPI on port 8000 (internal) |
 | `worker` | Outbox events; calendar reminders every minute; nightly consistency checks |
 | `web` | Next.js on port 3000 (internal) |
@@ -84,7 +84,9 @@ Pushes to `main` deploy automatically (next section). By hand, on the server:
 bash infra/deploy.sh             # latest origin/main; or: bash infra/deploy.sh <commit sha>
 ```
 
-[`infra/deploy.sh`](../infra/deploy.sh) fetches the commit and resets the checkout to it (do not edit tracked files on the server; `.env` and the volumes are not touched), builds the images, takes a backup, restarts the stack, waits until the API is healthy and the other services are running, then prunes old images. If the build fails, the running version stays up. `migrate` applies new migrations before `api` and `worker` start; if a migration fails, the API does not start, the deploy fails and prints `docker compose logs migrate`.
+[`infra/deploy.sh`](../infra/deploy.sh) fetches the commit and resets the checkout to it (do not edit tracked files on the server; `.env` and the volumes are not touched), builds the images, takes a backup, restarts the stack, waits until the API is healthy and the other services are running, then prunes old images. If the build fails, the running version stays up. `migrate` applies new migrations and then the seed before `api` and `worker` start; if either fails, the API does not start, the deploy fails and prints `docker compose logs migrate`.
+
+The seed adds what a release introduced, such as a new role, payment purpose or account, and leaves existing rows alone, including ones administrators renamed or disabled. Its log line shows what it added (`seeded: categories +1, accounts +1, payment_accounts +0`). On a first install it is skipped until you run `seed --company` by hand, because that command names the company.
 
 To roll back, deploy the previous commit: `bash infra/deploy.sh <older sha>`. Migrations are not reversed, so if the bad release changed the schema, restore the pre-deploy backup instead (see [Restoring production](#restoring-production-after-data-loss)).
 

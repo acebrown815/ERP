@@ -20,7 +20,8 @@ services:
 
   migrate:
     build: ../apps/api
-    command: ["python", "-m", "app.cli", "migrate"]
+    # Also adds what a release introduced (roles, purposes, accounts). Existing rows are left alone.
+    command: ["python", "-m", "app.cli", "migrate", "--seed"]
     environment: &api-env
       ERP_ENV: ${ERP_ENV:-prod}
       ERP_DATABASE_URL: postgresql+asyncpg://erp:${POSTGRES_PASSWORD}@postgres:5432/erp

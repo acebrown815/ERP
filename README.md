@@ -80,6 +80,6 @@ openssl rand -base64 24       # administrator password; keep it in a password ma
 docker compose -f infra/docker-compose.yml --env-file .env exec api python -m app.cli create-admin --email admin@chonryong.com --name "Administrator"   # prompts for it
 ```
 
-Caddy terminates TLS for `ERP_DOMAIN` (www redirects to it) and routes `/api` to the API and everything else to the web app. Migrations run automatically on start (`migrate` service).
+Caddy terminates TLS for `ERP_DOMAIN` (www redirects to it) and routes `/api` to the API and everything else to the web app. Migrations and the seed run automatically on start (`migrate` service); the seed is skipped until a first install has been seeded by hand with its company name.
 
 Pushes to `main` that pass CI are deployed to the server by GitHub Actions, which runs [infra/deploy.sh](infra/deploy.sh) over SSH; the images are built on the server. Server sizing and setup: [docs/operations.md](docs/operations.md).
