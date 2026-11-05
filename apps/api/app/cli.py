@@ -133,7 +133,7 @@ async def demo_business() -> None:
             print("demo business data already present; skipped")
             return
         admin = await auth.get_user_by_email(s, "admin@example.com")
-        actor = admin.id if admin else None
+        actor: Any = admin.id if admin else None
         cat = lambda g, k: categories.by_system_key(s, g, k)  # noqa: E731
         full_time = await cat("employment_type", "full_time")
         abc = await parties.create(

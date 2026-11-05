@@ -110,7 +110,14 @@ class RateLookupOut(BaseModel):
 async def get_company(user: CurrentUser = Depends(current_user), session: AsyncSession = Depends(get_session)) -> Any:
     company = await service.get_company(session)
     if user.restricted:  # The app's name and currency are all their screens use.
-        hidden = {"legal_name": None, "email": None, "phone": None, "website": None, "address": {}, "policies": {}}
+        hidden: dict[str, Any] = {
+            "legal_name": None,
+            "email": None,
+            "phone": None,
+            "website": None,
+            "address": {},
+            "policies": {},
+        }
         return CompanyOut.model_validate(company).model_copy(update=hidden)
     return company
 

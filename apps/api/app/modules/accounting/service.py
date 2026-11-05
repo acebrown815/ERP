@@ -759,6 +759,8 @@ async def project_ledger(
     if date_to:
         stmt = stmt.where(JournalEntry.posting_date <= date_to)
     for pid, root_type, system_key, d, c in (await session.execute(stmt)).all():
+        if pid is None:
+            continue
         row = out[pid]
         if root_type == "income":
             row.income += (c or ZERO) - (d or ZERO)
@@ -785,7 +787,7 @@ async def project_last_income(session: AsyncSession, project_ids: list[uuid.UUID
         )
         .group_by(JournalLine.project_id)
     )
-    return {pid: day for pid, day in (await session.execute(stmt)).all()}
+    return {pid: day for pid, day in (await session.execute(stmt)).all() if pid is not None}
 
 
 @dataclass

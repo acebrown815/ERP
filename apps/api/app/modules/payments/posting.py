@@ -270,7 +270,7 @@ async def build(session: AsyncSession, pe: PaymentEntry) -> Posting:
 
     # Lines -----------------------------------------------------------------------------------------
     fee_account = await accounting.account_by_system_key(session, "bank_fees") if company_fee else None
-    tags = {"party_id": pe.party_id, "project_id": pe.project_id, "employee_id": employee_id}
+    tags: dict[str, Any] = {"party_id": pe.party_id, "project_id": pe.project_id, "employee_id": employee_id}
     lines: list[accounting.LineIn] = []
     eligible: Decimal | None = None
     dst_rate: Decimal | None = None
@@ -291,10 +291,11 @@ async def build(session: AsyncSession, pe: PaymentEntry) -> Posting:
             )
         )
         if fee_base:
+            assert fee_account  # a non-zero fee means there is a company-paid fee
             lines.append(
                 accounting.LineIn(
                     account_id=fee_account.id,
-                    debit=fee_base,  # type: ignore[union-attr]
+                    debit=fee_base,
                     description="Payment processing fee",
                     **tags,
                 )
@@ -342,10 +343,11 @@ async def build(session: AsyncSession, pe: PaymentEntry) -> Posting:
                 )
             )
         if fee_base:
+            assert fee_account  # a non-zero fee means there is a company-paid fee
             lines.append(
                 accounting.LineIn(
                     account_id=fee_account.id,
-                    debit=fee_base,  # type: ignore[union-attr]
+                    debit=fee_base,
                     description="Payment processing fee",
                     **tags,
                 )
@@ -545,5 +547,5 @@ async def _fx_line(session: AsyncSession, lines: list[accounting.LineIn], diff: 
     if not diff:
         return
     fx = await accounting.account_by_system_key(session, "fx_gain_loss")
-    side = {"debit": diff} if diff > 0 else {"credit": -diff}
+    side: dict[str, Any] = {"debit": diff} if diff > 0 else {"credit": -diff}
     lines.append(accounting.LineIn(account_id=fx.id, description="Realized FX / crypto gain-loss", **side))

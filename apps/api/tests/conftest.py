@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine  # noqa: E4
 from sqlalchemy.pool import NullPool  # noqa: E402
 
 from app.cli import migrate, seed_all  # noqa: E402
+from app.core import ratelimit  # noqa: E402
 from app.core.db import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.modules.auth import api as auth  # noqa: E402
@@ -56,6 +57,7 @@ async def dispose_engine(database: None) -> AsyncIterator[None]:
 async def clean_db(database: None) -> None:
     """Empty every table, then seed. `replica` mode skips triggers and FK checks, so append-only tables
     (audit log, ledger) can be cleared with cheap DELETEs in any order. Requires a superuser (dev/CI)."""
+    ratelimit.reset_all()
     async with SessionLocal() as session:
         await session.execute(text("SET LOCAL session_replication_role = replica"))
         for table in Base.metadata.sorted_tables:

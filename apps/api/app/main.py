@@ -22,6 +22,7 @@ from app.modules.audit import setup as audit_setup
 from app.modules.audit.router import router as audit_router
 from app.modules.auth import setup as auth_setup
 from app.modules.auth.router import auth_router, users_router
+from app.modules.backups import setup as backups_setup
 from app.modules.backups.router import router as backups_router
 from app.modules.bidding.deps import run_refresher as run_bidding_refresher
 from app.modules.bidding.router import router as bidding_router
@@ -76,6 +77,7 @@ SETUPS = (
     compensation_setup,
     salary_setup,
     tasks_setup,
+    backups_setup,
 )
 ROUTERS = (
     auth_router,

@@ -121,7 +121,7 @@ async def customer_ids_for(session: AsyncSession, project_ids: set[uuid.UUID]) -
     rows = await session.execute(
         select(Project.customer_party_id).where(Project.id.in_(project_ids), Project.customer_party_id.is_not(None))
     )
-    return set(rows.scalars())
+    return {row for row in rows.scalars() if row is not None}
 
 
 async def ensure_visible(session: AsyncSession, user: CurrentUser, permission: str, project: Project) -> None:
@@ -140,7 +140,7 @@ def list_stmt(
     only_ids: set[uuid.UUID] | None,
     hire_employee_id: uuid.UUID | None = None,
     manager_employee_id: uuid.UUID | None = None,
-) -> Select[tuple[Project]]:
+) -> Select[Project]:
     stmt = select(Project).order_by(Project.number.desc())
     if hire_employee_id:
         stmt = stmt.where(Project.hire_employee_id == hire_employee_id)
@@ -356,7 +356,7 @@ async def managers_of_hire(session: AsyncSession, hire_id: uuid.UUID) -> set[uui
             Project.hire_employee_id == hire_id, Project.manager_employee_id.is_not(None)
         )
     )
-    return set(rows.scalars())
+    return {row for row in rows.scalars() if row is not None}
 
 
 def _check_may_select_hire(viewer: Viewer, hire_id: uuid.UUID | None) -> None:

@@ -47,7 +47,9 @@ JOB_FILE = "job.json"
 LOCK_FILE = ".lock"
 LOCK_STALE_SECONDS = 6 * 3600
 # An older backup can hold outbox events that look stale; the worker processes them after the restore.
-NON_BLOCKING_CHECKS = frozenset({"worker"})
+# The backup check looks at this server's files, not at the data being restored.
+NON_BLOCKING_CHECKS = frozenset({"worker", "backup_recent"})
+RECENT_BACKUP = timedelta(hours=36)
 API_DIR = Path(__file__).resolve().parents[3]
 
 _tasks: set[asyncio.Task[None]] = set()  # keep running jobs referenced
@@ -172,6 +174,21 @@ def list_backups() -> list[BackupInfo]:
         except (archive.BackupError, KeyError, ValueError):
             log.warning("backup.unreadable", file=path.name)
     return sorted(out, key=lambda b: b.created_at, reverse=True)
+
+
+def last_automatic() -> datetime | None:
+    """When the newest nightly backup was made, so a restarted worker doesn't make a second one that night."""
+    return next((b.created_at for b in list_backups() if b.kind == "auto"), None)
+
+
+def recent_backup(*, production: bool) -> tuple[bool, str]:
+    """System check: one made here within the last day and a half. An uploaded file says nothing about this server."""
+    newest = next((b for b in list_backups() if b.kind != "upload"), None)
+    if newest is None:
+        return not production, "No backups yet"
+    age = datetime.now(UTC) - newest.created_at
+    detail = f"Newest is {newest.name}, {age.total_seconds() / 3600:.0f} hours old"
+    return age <= RECENT_BACKUP, detail
 
 
 def _new_path(kind: Kind) -> Path:

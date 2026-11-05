@@ -585,22 +585,26 @@ async def feed(
         scope_projects = v.project_ids if v.project_ids is not None else None
     if view != "team" or project_id:
         for m in await projects.milestones_between(session, scope_projects, date_from, date_to):
+            if m.due_date is None:  # the query only returns milestones due in the range
+                continue
             items.append(
                 Item(
                     key=f"milestone:{m.id}",
                     kind="milestone",
                     title=m.name,
                     all_day=True,
-                    start=m.due_date.isoformat(),  # type: ignore[union-attr]
+                    start=m.due_date.isoformat(),
                     end=m.due_date.isoformat(),
                     color="violet",
                     id=m.id,
-                    status=m.status,  # type: ignore[union-attr]
+                    status=m.status,
                     project_id=m.project_id,
                     link=f"/projects/{m.project_id}?tab=timeline",
                 )
             )
         for p in await projects.deadlines_between(session, scope_projects, date_from, date_to):
+            if p.deadline is None:  # the query only returns projects due in the range
+                continue
             items.append(
                 Item(
                     key=f"deadline:{p.id}",
@@ -610,7 +614,7 @@ async def feed(
                     start=p.deadline.isoformat(),
                     end=p.deadline.isoformat(),
                     color="red",
-                    id=p.id,  # type: ignore[union-attr]
+                    id=p.id,
                     project_id=p.id,
                     link=f"/projects/{p.id}",
                 )
@@ -704,8 +708,10 @@ async def workload(
         mine = [w for w in who if w in ids]
         if not remaining or not mine:
             continue
-        start = max(task.start_date or task.due_date, today)  # type: ignore[type-var]
-        end = max(task.due_date, start)  # type: ignore[type-var]
+        if task.due_date is None:  # the query only returns tasks with a due date
+            continue
+        start = max(task.start_date or task.due_date, today)
+        end = max(task.due_date, start)
         working = [d for d in recurrence.days(start, end) if d.weekday() < 5] or [end]
         per_day = remaining / len(working) / len(mine)
         for d in working:

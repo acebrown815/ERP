@@ -13,7 +13,7 @@ from app.modules.salary.service import closed_through
 
 async def _labels(session: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
     rows = await session.execute(select(SalaryPeriod.id, SalaryPeriod.label).where(SalaryPeriod.id.in_(ids)))
-    return dict(rows.all())  # type: ignore[arg-type]
+    return dict(rows.all())
 
 
 def setup() -> None:

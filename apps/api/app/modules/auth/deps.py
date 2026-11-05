@@ -74,7 +74,7 @@ class CurrentUser:
         return granted is not None and granted.rank >= scope.rank
 
 
-async def _restricted_record(session: AsyncSession, user_id: uuid.UUID):  # type: ignore[no-untyped-def]
+async def _restricted_record(session: AsyncSession, user_id: uuid.UUID):
     from app.modules.employees import api as employees  # imported here: employees depends on this module
 
     own = await employees.for_user(session, user_id)

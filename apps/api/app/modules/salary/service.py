@@ -206,7 +206,9 @@ async def _live(
             result = compensation.calculate(f.definition, basis, adj)
         else:
             # No formula: revenue still shows (so a missing assignment is visible); only adjustments count.
-            result = compensation.calculate(compensation.FormulaDefinition(rate_schedule={"mode": "none"}), basis, adj)
+            result = compensation.calculate(
+                compensation.FormulaDefinition.model_validate({"rate_schedule": {"mode": "none"}}), basis, adj
+            )
         out[emp] = Line(
             period=period,
             employee_id=emp,
@@ -426,7 +428,7 @@ async def remove_expense(session: AsyncSession, *, payment_entry_id: uuid.UUID) 
 async def net_revenue(session: AsyncSession, employee_id: uuid.UUID, on: date) -> Decimal:
     """An employee's revenue minus tagged expenses so far, in the salary period containing `on`."""
     period = await period_for(session, on)
-    span = {"date_from": period.start_date, "date_to": period.end_date, "employee_ids": [employee_id]}
+    span: dict[str, Any] = {"date_from": period.start_date, "date_to": period.end_date, "employee_ids": [employee_id]}
     gross = (await attribution.employee_totals(session, **span)).get(employee_id) or ZERO
     spent = (await expense_totals(session, **span)).get(employee_id) or ZERO
     return gross - spent
@@ -442,7 +444,7 @@ async def expense_totals(
     )
     if employee_ids is not None:
         stmt = stmt.where(EmployeeExpense.employee_id.in_(employee_ids))
-    return dict((await session.execute(stmt)).all())  # type: ignore[arg-type]
+    return dict((await session.execute(stmt)).all())
 
 
 async def expenses_for_employee(
@@ -761,11 +763,11 @@ async def project_salary(
         )
         by_emp = {x.employee_id: x for x in lines}
         for emp, project_id, revenue, _ in rows:
-            line = by_emp.get(emp)
-            if line and project_id in out and revenue:
-                share = revenue / line.gross_revenue
+            found = by_emp.get(emp)
+            if found and project_id in out and revenue:
+                share = revenue / found.gross_revenue
                 earned, paid = out[project_id]
-                out[project_id] = (earned + max(line.calculated, ZERO) * share, paid + line.paid * share)
+                out[project_id] = (earned + max(found.calculated, ZERO) * share, paid + found.paid * share)
     return {p: (quantize(e, 2), quantize(d, 2)) for p, (e, d) in out.items()}
 
 

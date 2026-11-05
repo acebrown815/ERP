@@ -531,7 +531,10 @@ async def employee_revenue(
         pr = by_project.setdefault(
             r.project_id,
             ProjectRevenue(
-                project_id=r.project_id, project_name=project_names.get(r.project_id), revenue=Decimal(0), payments=0
+                project_id=r.project_id,
+                project_name=project_names.get(r.project_id) if r.project_id else None,
+                revenue=Decimal(0),
+                payments=0,
             ),
         )
         pr.revenue += r.amount_base or Decimal(0)
@@ -549,7 +552,7 @@ async def employee_revenue(
                 payment_entry_id=x.payment_entry_id,
                 payment_number=numbers.get(x.payment_entry_id),
                 date=x.expense_date,
-                project_name=project_names.get(x.project_id),
+                project_name=project_names.get(x.project_id) if x.project_id else None,
                 amount=x.amount,
             )
             for x in spent
@@ -560,7 +563,7 @@ async def employee_revenue(
                 payment_number=numbers.get(r.payment_entry_id),
                 date=r.attribution_date,  # type: ignore[arg-type]
                 project_id=r.project_id,
-                project_name=project_names.get(r.project_id),
+                project_name=project_names.get(r.project_id) if r.project_id else None,
                 percent=r.percent,
                 amount=r.amount_base or Decimal(0),
             )
@@ -696,7 +699,7 @@ async def revenue_report(
             )
         )
     rows.sort(key=lambda r: -r.total)
-    totals = [sum((r.by_period[i] for r in rows), Decimal(0)) for i in range(len(periods))]
+    period_totals = [sum((r.by_period[i] for r in rows), Decimal(0)) for i in range(len(periods))]
     if format != "json":
         return export_response(
             format,
@@ -710,7 +713,10 @@ async def revenue_report(
             ],
         )
     return RevenueReportOut(
-        periods=[_report_period(p) for p in periods], rows=rows, totals=totals, total=sum(totals, Decimal(0))
+        periods=[_report_period(p) for p in periods],
+        rows=rows,
+        totals=period_totals,
+        total=sum(period_totals, Decimal(0)),
     )
 
 

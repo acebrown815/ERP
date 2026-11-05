@@ -220,7 +220,7 @@ async def parties_paid_for(
         )
         .distinct()
     )
-    return set(rows.scalars())
+    return {row for row in rows.scalars() if row is not None}
 
 
 async def hire_paid_totals(
@@ -240,7 +240,7 @@ async def hire_paid_totals(
         )
         .group_by(PaymentEntry.party_id, PaymentEntry.employee_id)
     )
-    return {(party, employee): total or Decimal(0) for party, employee, total in rows.all()}
+    return {(party, employee): total or Decimal(0) for party, employee, total in rows.all() if party and employee}
 
 
 async def involves(
@@ -280,7 +280,7 @@ def list_stmt(
     employee_party_id: uuid.UUID | None = None,
     account_ids: list[uuid.UUID] | None = None,
     search_description: bool = True,
-) -> Select[tuple[PaymentEntry]]:
+) -> Select[PaymentEntry]:
     stmt = select(PaymentEntry).order_by(PaymentEntry.posting_date.desc(), PaymentEntry.number.desc())
     if employee_id:
         # Everything about one employee: revenue split to them, salary paid to them, expenses tagged to them.
@@ -718,7 +718,7 @@ async def party_first_last(session: AsyncSession, *, direction: str) -> dict[uui
         )
         .group_by(PaymentEntry.party_id)
     )
-    return {p: (first, last) for p, first, last in rows.all()}
+    return {p: (first, last) for p, first, last in rows.all() if p is not None}
 
 
 async def fee_totals(
@@ -794,12 +794,12 @@ async def employee_project_totals(
 
 
 async def totals(
-    session: AsyncSession, stmt: Select[tuple[PaymentEntry]], *, share_of: uuid.UUID | None = None
+    session: AsyncSession, stmt: Select[PaymentEntry], *, share_of: uuid.UUID | None = None
 ) -> dict[str, Any]:
     """Count and base-currency totals of a filtered list (submitted entries only count toward money).
     With `share_of`: a payment split between employees counts with that employee's share only."""
     sub = stmt.order_by(None).subquery()
-    amount = sub.c.base_amount
+    amount: Any = sub.c.base_amount
     query = select(sub.c.direction, sub.c.status, func.count())
     if share_of:
         share = attribution.employee_shares(share_of)

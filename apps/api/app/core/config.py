@@ -20,8 +20,11 @@ class Settings(BaseSettings):
     session_idle_minutes: int = 12 * 60
     session_absolute_hours: int = 7 * 24
 
+    # Failed sign-ins are counted per email + address, so someone else guessing can't lock the real user out.
     login_max_failures: int = 5
     login_lockout_minutes: int = 15
+    login_ip_max_failures: int = 20  # one address, any accounts
+    login_account_max_failures: int = 50  # one account, any addresses, since its last successful sign-in
     password_min_length: int = 10
     # Test-only: cheap Argon2 parameters. Never enable in production.
     fast_password_hashing: bool = False

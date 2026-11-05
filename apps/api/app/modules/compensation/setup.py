@@ -11,7 +11,7 @@ from app.modules.compensation.models import CompFormula
 
 async def _names(session: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
     rows = await session.execute(select(CompFormula.id, CompFormula.name).where(CompFormula.id.in_(ids)))
-    return dict(rows.all())  # type: ignore[arg-type]
+    return dict(rows.all())
 
 
 def setup() -> None:

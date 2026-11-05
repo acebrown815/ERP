@@ -212,7 +212,7 @@ async def employee_totals(
     )
     if employee_ids is not None:
         stmt = stmt.where(RevenueAllocation.employee_id.in_(employee_ids))
-    return dict((await session.execute(stmt)).all())
+    return {employee: total or Decimal(0) for employee, total in (await session.execute(stmt)).all()}
 
 
 async def expense_totals(

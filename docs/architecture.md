@@ -78,7 +78,7 @@ The bridges between the two are explicit:
 - **Decimal-only money:** `NUMERIC` in Postgres, `Decimal` in Python, strings in JSON, `decimal.js` in the browser. Floats are banned by a lint rule.
 - **Auditability:** append-only audit log for every submit, cancel, month close/reopen, and every edit to sensitive data.
 - **Performance target:** GL reports over 5 years × ~50k lines/year in < 2 s. List screens < 300 ms p95.
-- **Backups:** daily full backup + WAL archiving (point-in-time recovery, RPO ≤ 15 min).
+- **Backups:** daily full backups on the server, downloaded by hand from Settings → Backups. *As built:* no WAL archiving, so up to a day of entries can be lost, and a failed disk loses everything not downloaded.
 - **Scale assumption:** < 200 users, < 1M journal lines in the first years. One Postgres and a modular monolith are plenty.
 
 ---
@@ -1226,7 +1226,7 @@ Keyboard-friendly forms, skeleton loading, clear empty states, confirmations for
 
 ### 15.1 Authentication
 
-- Email + password (Argon2id), rate-limited login with backoff, password reset by email link.
+- Email + password (Argon2id), rate-limited login, password reset by email link. *As built:* limits are per email + address and per address, with an account-wide lock as a backstop (operations.md, Security notes). The app doesn't send email yet, so an administrator sets a new password instead.
 - Server-side sessions in Postgres (`user_sessions`, token stored as a SHA-256 hash; httpOnly, Secure, SameSite=Lax cookie), 12 h idle and 7 day absolute timeout, new token on every login, logout-everywhere. The CSRF token is stored with the session and must be echoed in `X-CSRF-Token`.
 - `user_identities` table so **Google OAuth** can be added later as another provider without changing users.
 - CSRF token on unsafe methods, strict CSP, HSTS.
@@ -1342,7 +1342,7 @@ sequenceDiagram
 | Frontend unit | Vitest + Testing Library | `MoneyInput`, `AllocationEditor`, `CategorySelect`, form schemas |
 | Reconciliation | Nightly job | Trial balance ties. Balance sheet balances. Σ active allocations = Σ eligible receipts. Σ salary links = Σ salary payments |
 
-CI gates: ruff, mypy (strict on accounting, payments, compensation, salary), the module-boundary test, eslint, tsc, tests, ≥ 90% coverage on financial modules.
+CI gates: ruff, mypy, the module-boundary test, eslint, tsc, tests, Playwright (`apps/web/e2e`). *As built:* mypy runs in its default mode, not strict, and coverage isn't measured or enforced yet.
 
 ---
 

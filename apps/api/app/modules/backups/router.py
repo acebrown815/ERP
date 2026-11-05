@@ -12,9 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.db import get_session
 from app.core.errors import ValidationFailed, field_error
-from app.core.security import verify_password
 from app.modules.audit import api as audit
-from app.modules.auth.api import CurrentUser, get_user, require
+from app.modules.auth.api import CurrentUser, confirm_password, get_user, require
 from app.modules.backups import service
 
 router = APIRouter(prefix="/backups", tags=["backups"])
@@ -128,7 +127,7 @@ async def restore_backup(
     """Replace all data with the backup. Needs the caller's password. Runs in the background and signs
     everyone out when it finishes; the data before the restore is kept as a "pre-restore" backup."""
     account = await get_user(session, user.id)
-    if not verify_password(account.password_hash, body.password):
+    if not confirm_password(account, body.password):
         message = "Password is wrong"
         raise ValidationFailed(message, errors=[field_error("password", message, "wrong_password")])
     job = service.start_restore(name, user_id=user.id, by=user.email)
