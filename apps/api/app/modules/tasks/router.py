@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import lookup
 from app.core.db import get_session
-from app.core.errors import Forbidden
+from app.core.errors import Forbidden, ValidationFailed, field_error
 from app.core.pagination import Page, PageParams, page_params, paginate
 from app.modules.auth.api import CurrentUser, require
 from app.modules.employees import api as employees
@@ -210,10 +210,18 @@ class TimelineOut(BaseModel):
 
 
 class Access:
-    def __init__(self, can_manage: bool, employee_id: uuid.UUID | None, may_update_own: bool) -> None:
+    def __init__(
+        self,
+        can_manage: bool,
+        employee_id: uuid.UUID | None,
+        may_update_own: bool,
+        team_assignees_only: bool = False,
+    ) -> None:
         self.can_manage = can_manage
         self.employee_id = employee_id
         self.may_update_own = may_update_own
+        # Hires, and employees running their own project, assign tasks within the project team only.
+        self.team_assignees_only = team_assignees_only
 
 
 async def _access(session: AsyncSession, user: CurrentUser, project_id: uuid.UUID) -> Access:
@@ -222,9 +230,28 @@ async def _access(session: AsyncSession, user: CurrentUser, project_id: uuid.UUI
     await projects.ensure_visible(session, user, "projects.read", project)
     scope = user.scope_for("tasks.manage")
     member = await projects.is_team_member(session, user, project_id)
-    manage = scope == Scope.ALL or (scope is not None and member)
     own = await employees.for_user(session, user.id)
-    return Access(manage, own.id if own else None, user.can("tasks.update_own"))
+    runs_own_project = (
+        own is not None
+        and not user.restricted
+        and scope is None
+        and user.can("projects.create_own")
+        and project.manager_employee_id == own.id
+    )
+    manage = scope == Scope.ALL or (scope is not None and member) or runs_own_project
+    return Access(manage, own.id if own else None, user.can("tasks.update_own"), runs_own_project or user.restricted)
+
+
+async def _check_assignees(
+    session: AsyncSession, access: Access, project_id: uuid.UUID, assignee_ids: list[uuid.UUID] | None
+) -> None:
+    if not access.team_assignees_only or not assignee_ids:
+        return
+    if set(assignee_ids) - await projects.team_ids(session, {project_id}):
+        raise ValidationFailed(
+            "Assign tasks to the project team",
+            errors=[field_error("assignee_ids", "Only people on this project can be assigned")],
+        )
 
 
 async def _can_move(session: AsyncSession, access: Access, task: Task) -> bool:
@@ -348,6 +375,7 @@ async def create_task(
     access = await _access(session, user, body.project_id)
     if not access.can_manage:
         raise Forbidden("Only the project's managers can add tasks")
+    await _check_assignees(session, access, body.project_id, body.assignee_ids)
     task = await service.create(
         session,
         actor_id=user.id,
@@ -373,6 +401,7 @@ async def update_task(
     own_status_only = not (set(changes) - {"status"}) and body.assignee_ids is None
     if not access.can_manage and not (own_status_only and await _can_move(session, access, task)):
         raise Forbidden("You can only change the status of tasks assigned to you")
+    await _check_assignees(session, access, task.project_id, body.assignee_ids)
     task = await service.update(
         session,
         actor_id=user.id,

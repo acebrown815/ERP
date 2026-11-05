@@ -16,6 +16,7 @@ import { formatAmount } from "@/lib/money";
 import { useEmployees } from "@/lib/queries";
 import type { Milestone, Page, Project, Task, TaskComment, TaskDetail, TimeEntry } from "@/lib/types";
 import { cn, formatDate, formatDateTime } from "@/lib/utils";
+import { useMe } from "@/lib/session";
 
 import { isOverdue, ProjectSelect, TASK_STATUSES, TaskStatusBadge } from "./shared";
 
@@ -72,9 +73,14 @@ function TaskFields({ form, set, editable, statusEditable, project, milestones }
   project: Project | undefined;
   milestones: Milestone[];
 }) {
-  const employees = useEmployees();
-  const team = new Set([...(project?.members.map((m) => m.employee_id) ?? []), ...(project?.manager_employee_id ? [project.manager_employee_id] : [])]);
-  const people = (employees.data ?? []).filter((e) => team.has(e.id) || form.assignee_ids.includes(e.id));
+  // Names come with the project: employees and hires can't list the directory, but do work with their team.
+  const employees = useEmployees(!useMe().restricted_access);
+  const team = new Map<string, string>();
+  for (const m of project?.members ?? []) team.set(m.employee_id, m.employee_name ?? "?");
+  if (project?.manager_employee_id) team.set(project.manager_employee_id, project.manager_name ?? "?");
+  if (project?.hire_employee_id) team.set(project.hire_employee_id, project.hire_name ?? "?");
+  for (const e of employees.data ?? []) if (form.assignee_ids.includes(e.id)) team.set(e.id, e.full_name);
+  const people = [...team].map(([id, full_name]) => ({ id, full_name })).sort((a, b) => a.full_name.localeCompare(b.full_name));
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       <fieldset disabled={!editable} className="contents">

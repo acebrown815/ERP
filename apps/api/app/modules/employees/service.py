@@ -12,6 +12,7 @@ from app.modules.auth import api as auth
 from app.modules.categories import api as categories
 from app.modules.employees.models import Department, Employee, EmployeeBiddingProfile
 from app.modules.parties import api as parties
+from app.modules.rbac import api as rbac
 
 EDITABLE = (
     "full_name",
@@ -27,7 +28,12 @@ EDITABLE = (
     "timezone",
     "notes",
     "user_id",
+    "is_hired_manager",
 )
+
+
+# People outside the company's staff. Their sign-ins get the restricted access in auth/deps.py, whatever role they hold.
+RESTRICTED_EMPLOYMENT_TYPES = {"contractor", "freelancer"}
 
 
 def _snapshot(e: Employee) -> dict[str, Any]:
@@ -49,6 +55,83 @@ async def by_party(session: AsyncSession, party_id: uuid.UUID) -> Employee | Non
     return (await session.execute(select(Employee).where(Employee.party_id == party_id))).scalar_one_or_none()
 
 
+async def _employment_type(session: AsyncSession, category_id: uuid.UUID | None) -> str | None:
+    return (await categories.get(session, category_id)).system_key if category_id else None
+
+
+async def is_restricted(session: AsyncSession, employee: Employee) -> bool:
+    """Hired managers, and anyone engaged as a contractor or freelancer."""
+    if employee.is_hired_manager:
+        return True
+    return await _employment_type(session, employee.employment_type_category_id) in RESTRICTED_EMPLOYMENT_TYPES
+
+
+async def is_full_time(session: AsyncSession, employee: Employee) -> bool:
+    return not employee.is_hired_manager and (
+        await _employment_type(session, employee.employment_type_category_id) == "full_time"
+    )
+
+
+async def hire_ids(session: AsyncSession, ids: list[uuid.UUID]) -> set[uuid.UUID]:
+    """Which of these employees are hired managers (they earn no revenue and get no salary)."""
+    if not ids:
+        return set()
+    rows = await session.execute(select(Employee.id).where(Employee.id.in_(ids), Employee.is_hired_manager))
+    return set(rows.scalars())
+
+
+async def assert_not_hire(session: AsyncSession, employee_id: uuid.UUID, field: str = "employee_id") -> None:
+    if await hire_ids(session, [employee_id]):
+        raise ValidationFailed(
+            "Not available for hired managers",
+            errors=[field_error(field, "Hired managers earn no revenue or salary", "hired_manager")],
+        )
+
+
+async def active_hires(session: AsyncSession) -> list[Employee]:
+    rows = await session.execute(
+        select(Employee)
+        .where(Employee.is_hired_manager, Employee.status != "terminated")
+        .order_by(func.lower(Employee.full_name))
+    )
+    return list(rows.scalars())
+
+
+async def all_hires(session: AsyncSession) -> list[Employee]:
+    rows = await session.execute(
+        select(Employee).where(Employee.is_hired_manager).order_by(func.lower(Employee.full_name))
+    )
+    return list(rows.scalars())
+
+
+async def _check_hire_change(session: AsyncSession, employee: Employee) -> None:
+    """An employee with money or project history can't become a hired manager, or stop being one: their past
+    salary, revenue and payments only make sense as the type they had. Imported here because those modules
+    depend on this one."""
+    from app.modules.attribution import api as attribution
+    from app.modules.compensation import api as compensation
+    from app.modules.payments import api as payments
+    from app.modules.projects import api as projects
+    from app.modules.salary import api as salary
+
+    reasons = []
+    if await compensation.has_assignments(session, employee.id):
+        reasons.append("a salary formula")
+    if await attribution.has_allocations(session, employee.id):
+        reasons.append("revenue or expense splits")
+    if await salary.has_adjustments(session, employee.id):
+        reasons.append("salary adjustments")
+    if await payments.has_employee_payments(session, employee_id=employee.id, party_id=employee.party_id):
+        reasons.append("payments")
+    if await projects.is_on_any_project(session, employee.id):
+        reasons.append("projects")
+    if reasons:
+        raise ValidationFailed(
+            "Can't change whether this person is a hired manager",
+            errors=[field_error("is_hired_manager", f"{employee.full_name} already has {', '.join(reasons)}")],
+        )
+
+
 async def names(session: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
     return dict((await session.execute(select(Employee.id, Employee.full_name).where(Employee.id.in_(ids)))).all())
 
@@ -67,9 +150,16 @@ async def active_ids(session: AsyncSession, ids: list[uuid.UUID], on: date) -> s
 
 
 def list_stmt(
-    *, q: str | None, status: str | None, department_id: uuid.UUID | None, only_user_id: uuid.UUID | None = None
+    *,
+    q: str | None,
+    status: str | None,
+    department_id: uuid.UUID | None,
+    only_user_id: uuid.UUID | None = None,
+    hired: bool | None = None,
 ) -> Select[tuple[Employee]]:
     stmt = select(Employee).order_by(func.lower(Employee.full_name))
+    if hired is not None:
+        stmt = stmt.where(Employee.is_hired_manager.is_(hired))
     if q:
         like = f"%{q.strip()}%"
         stmt = stmt.where(
@@ -107,6 +197,15 @@ async def _validate(session: AsyncSession, data: dict[str, Any], employee_id: uu
             await auth.get_user(session, data["user_id"])
         except NotFound:
             raise ValidationFailed("Unknown user", errors=[field_error("user_id", "User not found")]) from None
+        # Restricted access is fixed, so this would silently take an administrator's away.
+        employment = await _employment_type(session, data.get("employment_type_category_id"))
+        restricted = bool(data.get("is_hired_manager")) or employment in RESTRICTED_EMPLOYMENT_TYPES
+        if restricted and data["user_id"] in await rbac.admin_user_ids(session):
+            field = "is_hired_manager" if data.get("is_hired_manager") else "employment_type_category_id"
+            raise ValidationFailed(
+                "An administrator can't have restricted access",
+                errors=[field_error(field, "This sign-in is an administrator")],
+            )
         other = await for_user(session, data["user_id"])
         if other and other.id != employee_id:
             raise ValidationFailed(
@@ -150,7 +249,10 @@ async def update(
         raise PreconditionFailed()
     before = _snapshot(employee)
     merged = {**before, **changes}
+    merged["is_hired_manager"] = bool(merged["is_hired_manager"])
     await _validate(session, merged, employee.id)
+    if merged["is_hired_manager"] != before["is_hired_manager"]:
+        await _check_hire_change(session, employee)
     for k in EDITABLE:
         setattr(employee, k, merged[k])
     employee.version += 1

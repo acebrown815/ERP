@@ -23,6 +23,8 @@ class MeOut(BaseModel):
     full_name: str
     roles: list[RoleRef]
     permissions: dict[str, str]
+    restricted_access: bool = False  # a hired manager, contractor or freelancer
+    can_select_hire: bool = False
     csrf_token: str
 
 

@@ -5,9 +5,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import Conflict, Forbidden, NotFound, ValidationFailed, field_error
 from app.modules.audit import api as audit
-from app.modules.rbac.defaults import DEFAULT_ROLES
+from app.modules.rbac.defaults import DEFAULT_ROLES, RESTRICTED_GRANTS
 from app.modules.rbac.models import Role, RolePermission, UserRole
 from app.modules.rbac.permissions import PERMISSIONS, Scope
+
+
+def restricted_grants() -> dict[str, Scope]:
+    """What a hired manager, contractor or freelancer can do, whatever role their sign-in holds: see the projects
+    they're connected to, manage those projects' tasks, and see their own payments."""
+    return dict(RESTRICTED_GRANTS)
 
 
 async def effective_grants(session: AsyncSession, user_id: uuid.UUID) -> dict[str, Scope]:

@@ -23,8 +23,7 @@ import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { api, ApiError } from "@/lib/api";
 import { formatAmount } from "@/lib/money";
-import { useEmployees } from "@/lib/queries";
-import { useCan } from "@/lib/session";
+import { useCan, useMe } from "@/lib/session";
 import type { Milestone, Page, Project, Task, TaskProgress, Timeline } from "@/lib/types";
 import { cn, formatDate } from "@/lib/utils";
 
@@ -110,19 +109,24 @@ function Milestones({ project, canManage }: { project: Project; canManage: boole
 }
 
 function Overview({ project, canManage, progress }: { project: Project; canManage: boolean; progress: TaskProgress | undefined }) {
-  const employees = useEmployees();
-  const name = (id: string | null | undefined) => employees.data?.find((e) => e.id === id)?.full_name ?? "—";
+  const isHire = useMe().restricted_access;
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <Card>
         <CardHeader><CardTitle>Details</CardTitle></CardHeader>
         <CardContent>
           <dl className="grid grid-cols-[9rem_1fr] gap-y-2 text-sm">
-            <dt className="text-muted-foreground">Manager</dt><dd>{name(project.manager_employee_id)}</dd>
+            {project.customer_name && (<><dt className="text-muted-foreground">Customer</dt><dd>{project.customer_name}</dd></>)}
+            <dt className="text-muted-foreground">Project manager</dt><dd>{project.manager_name ?? "—"}</dd>
+            {project.hire_name && (<><dt className="text-muted-foreground">Hire</dt><dd>{project.hire_name}</dd></>)}
             <dt className="text-muted-foreground">Dates</dt><dd>{formatDate(project.start_date)} – {formatDate(project.deadline)}</dd>
             <dt className="text-muted-foreground">Priority</dt><dd><PriorityLabel priority={project.priority} /></dd>
-            <dt className="text-muted-foreground">Contract</dt><dd className="tabular">{project.contract_value ? `${formatAmount(project.contract_value)} ${project.currency}` : "—"}</dd>
-            <dt className="text-muted-foreground">Budget</dt><dd className="tabular">{project.budget ? formatAmount(project.budget) : "—"}</dd>
+            {!isHire && (
+              <>
+                <dt className="text-muted-foreground">Contract</dt><dd className="tabular">{project.contract_value ? `${formatAmount(project.contract_value)} ${project.currency}` : "—"}</dd>
+                <dt className="text-muted-foreground">Budget</dt><dd className="tabular">{project.budget ? formatAmount(project.budget) : "—"}</dd>
+              </>
+            )}
             <dt className="text-muted-foreground">Progress</dt>
             <dd>
               <ProgressBar value={project.completion_override ?? progress?.percent ?? "0"} />
@@ -142,7 +146,7 @@ function Overview({ project, canManage, progress }: { project: Project; canManag
               <ul className="flex flex-col gap-1 text-sm">
                 {project.members.map((m) => (
                   <li key={m.employee_id} className="flex justify-between gap-2">
-                    <Link href={`/employees/${m.employee_id}`} className="hover:underline">{name(m.employee_id)}</Link>
+                    {isHire ? <span>{m.employee_name ?? "—"}</span> : <Link href={`/employees/${m.employee_id}`} className="hover:underline">{m.employee_name ?? "—"}</Link>}
                     <span className="text-muted-foreground">{[m.role, m.default_allocation_pct ? `${m.default_allocation_pct.replace(/\.?0+$/, "")}% of revenue` : null].filter(Boolean).join(" · ")}</span>
                   </li>
                 ))}
@@ -226,7 +230,7 @@ export default function ProjectPage() {
         actions={
           <>
             <Button variant="outline" asChild><Link href="/projects"><ArrowLeft /> Projects</Link></Button>
-            {can("projects.manage") && <Button variant="outline" onClick={() => setEditing(true)}><Pencil /> Edit</Button>}
+            {p.edit_mode && <Button variant="outline" onClick={() => setEditing(true)}><Pencil /> Edit</Button>}
           </>
         }
       />
@@ -238,7 +242,7 @@ export default function ProjectPage() {
           </button>
         ))}
       </div>
-      {tab === "overview" && <Overview project={p} canManage={can("projects.manage") && canManageTasks} progress={progress.data?.[0]} />}
+      {tab === "overview" && <Overview project={p} canManage={!!p.edit_mode && canManageTasks} progress={progress.data?.[0]} />}
       {tab === "tasks" && <TaskList projectId={p.id} canCreate={canManageTasks} onOpen={(taskId) => setOpenTask({ id: taskId })} />}
       {tab === "board" && <KanbanBoard projectId={p.id} />}
       {tab === "timeline" && <Card><CardContent className="pt-6"><Gantt projectId={p.id} /></CardContent></Card>}

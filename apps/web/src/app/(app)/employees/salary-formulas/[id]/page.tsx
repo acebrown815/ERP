@@ -104,7 +104,7 @@ function AssignDialog({ formula, onClose }: { formula: FormulaDetail; onClose: (
           <DialogDescription>If the employee is on another formula, that one ends the day before.</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-4">
-          <FormField id="a_emp" label="Employee" required><EmployeePicker id="a_emp" value={employee} onChange={setEmployee} /></FormField>
+          <FormField id="a_emp" label="Employee" required><EmployeePicker id="a_emp" excludeHires value={employee} onChange={setEmployee} /></FormField>
           <FormField id="a_from" label="From" required><Input id="a_from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></FormField>
           <FormField id="a_notes" label="Notes"><Input id="a_notes" value={notes} onChange={(e) => setNotes(e.target.value)} /></FormField>
         </div>

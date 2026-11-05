@@ -15,7 +15,7 @@ import { PageHeader } from "@/components/erp/page-header";
 import { EmptyState } from "@/components/erp/states";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input, Select, Textarea } from "@/components/ui/input";
+import { Checkbox, Input, Select, Textarea } from "@/components/ui/input";
 import { Badge, Card } from "@/components/ui/misc";
 import { api, ApiError } from "@/lib/api";
 import { useDepartments } from "@/lib/queries";
@@ -50,7 +50,11 @@ function EmployeeDialog({ employee, onClose }: { employee: Employee | null; onCl
     end_date: employee?.end_date ?? "",
     user_id: employee?.user_id ?? null,
     notes: employee?.notes ?? "",
+    is_hired_manager: employee?.is_hired_manager ?? false,
   });
+  const employmentTypes = useCategories("employment_type", true);
+  const outsideStaff = ["contractor", "freelancer"].includes(employmentTypes.data?.find((c) => c.id === form.employment.category_id)?.system_key ?? "");
+  const restricted = form.is_hired_manager || outsideStaff;
   const [newDept, setNewDept] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
@@ -61,7 +65,7 @@ function EmployeeDialog({ employee, onClose }: { employee: Employee | null; onCl
         full_name: form.full_name, email: form.email || null, phone: form.phone || null, job_title: form.job_title || null,
         department_id: form.department_id || null, employment_type_category_id: form.employment.category_id,
         employment_type_other_text: form.employment.other_text || null, status: form.status, start_date: form.start_date,
-        end_date: form.end_date || null, notes: form.notes || null, ...(can("users.manage") ? { user_id: form.user_id } : {}),
+        end_date: form.end_date || null, notes: form.notes || null, is_hired_manager: form.is_hired_manager, ...(can("users.manage") ? { user_id: form.user_id } : {}),
       };
       return employee ? api.patch<Employee>(`/employees/${employee.id}`, { ...body, version: employee.version }) : api.post<Employee>("/employees", body);
     },
@@ -118,11 +122,20 @@ function EmployeeDialog({ employee, onClose }: { employee: Employee | null; onCl
             </Select>
           </FormField>
           {can("users.manage") && (
-            <FormField id="e_user" label="Sign-in account" hint="Lets them see their own revenue and salary." error={errors.user_id}>
+            <FormField id="e_user" label="Sign-in account" hint={restricted ? "Restricted access: only their connected projects' tasks and their own payments, not their salary or revenue." : "Lets them see their own revenue and salary."} error={errors.user_id}>
               <Combobox id="e_user" value={form.user_id} onChange={(v) => set("user_id", v)} placeholder="Not linked"
                 options={(users.data ?? []).map((u) => ({ value: u.id, label: u.full_name, hint: u.email }))} />
             </FormField>
           )}
+          <FormField id="e_hired" label="Hired manager" className="sm:col-span-2" error={errors.is_hired_manager}
+            hint="Someone an employee hires to help run a project. They only see projects they're selected on, whatever role their sign-in has. They're paid through project expenses and get no salary or revenue.">
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox id="e_hired" checked={form.is_hired_manager} onChange={(e) => set("is_hired_manager", e.target.checked)} /> This person is a hired manager
+            </label>
+            {form.is_hired_manager && !form.user_id && (
+              <p role="status" className="text-xs font-medium text-warning">Link their sign-in account above, or they won&apos;t be able to see their projects.</p>
+            )}
+          </FormField>
           <FormField id="e_notes" label="Notes" className="sm:col-span-2"><Textarea id="e_notes" value={form.notes} onChange={(e) => set("notes", e.target.value)} /></FormField>
           <DialogFooter className="sm:col-span-2">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
@@ -141,10 +154,11 @@ export default function EmployeesPage() {
   const [page, setPage] = useState(1);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("active");
+  const [hired, setHired] = useState("");
   const [dialog, setDialog] = useState<{ employee: Employee | null } | null>(null);
   const employees = useQuery({
-    queryKey: ["employees", page, q, status],
-    queryFn: () => api.get<Page<Employee>>("/employees", { page, page_size: 25, q, status }),
+    queryKey: ["employees", page, q, status, hired],
+    queryFn: () => api.get<Page<Employee>>("/employees", { page, page_size: 25, q, status, hired: hired || undefined }),
     placeholderData: keepPreviousData,
   });
   const columns = useMemo<ColumnDef<Employee, unknown>[]>(
@@ -154,7 +168,10 @@ export default function EmployeesPage() {
         header: "Name",
         cell: ({ row }) => (
           <Link href={`/employees/${row.original.id}`} className="block">
-            <span className="block font-medium hover:underline">{row.original.full_name}</span>
+            <span className="flex items-center gap-2 font-medium hover:underline">
+              {row.original.full_name}
+              {row.original.is_hired_manager && <Badge variant="outline" className="whitespace-nowrap">Hired manager</Badge>}
+            </span>
             <span className="block text-xs text-muted-foreground">{row.original.job_title ?? row.original.email ?? ""}</span>
           </Link>
         ),
@@ -167,7 +184,7 @@ export default function EmployeesPage() {
       } },
       { accessorKey: "start_date", header: "Started", cell: ({ row }) => formatDate(row.original.start_date) },
       { accessorKey: "status", header: "Status", cell: ({ row }) => <Badge variant={STATUS[row.original.status]?.variant}>{STATUS[row.original.status]?.label}</Badge> },
-      { id: "user", header: "Sign-in", cell: ({ row }) => (row.original.user_id ? <Badge variant="outline">Linked</Badge> : <span className="text-xs text-muted-foreground">—</span>) },
+      { id: "user", header: "Sign-in", cell: ({ row }) => (row.original.user_id ? <Badge variant="outline">Linked</Badge> : row.original.is_hired_manager ? <Badge variant="warning" className="whitespace-nowrap">Not linked</Badge> : <span className="text-xs text-muted-foreground">—</span>) },
       ...(can("employees.manage")
         ? [{ id: "edit", header: "", cell: ({ row }: { row: { original: Employee } }) => (
             <Button variant="ghost" size="sm" onClick={() => setDialog({ employee: row.original })}>Edit</Button>
@@ -190,6 +207,11 @@ export default function EmployeesPage() {
           <Select aria-label="Status" className="sm:w-40" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
             <option value="">All</option>
             {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </Select>
+          <Select aria-label="Type" className="sm:w-44" value={hired} onChange={(e) => { setHired(e.target.value); setPage(1); }}>
+            <option value="">Everyone</option>
+            <option value="false">Employees</option>
+            <option value="true">Hired managers</option>
           </Select>
         </div>
         <DataTable columns={columns} data={employees.data?.items} isLoading={employees.isLoading} error={employees.error} getRowId={(e) => e.id}

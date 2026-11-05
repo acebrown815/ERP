@@ -19,6 +19,7 @@ from app.modules.auth.api import CurrentUser, require, require_any
 from app.modules.employees import api as employees
 from app.modules.payments import service
 from app.modules.payments.models import PaymentAccount, PaymentEntry
+from app.modules.projects import api as projects
 from app.modules.settings import api as settings
 
 router = APIRouter(tags=["payments"])
@@ -28,7 +29,30 @@ Quantity = Annotated[Decimal, Field(max_digits=38, decimal_places=18)]
 Rate = Annotated[Decimal, Field(gt=0, max_digits=30, decimal_places=12)]
 ReadPayments = Depends(require_any("payments.create", "reports.financial"))
 # Employees (own salary or revenue) may read the payments that involve them; see _own_employee.
-ReadOwnPayments = Depends(require_any("payments.create", "reports.financial", "salary.read", "revenue.read"))
+ReadOwnPayments = Depends(
+    require_any("payments.create", "reports.financial", "salary.read", "revenue.read", "payments.read_own")
+)
+# What restricted access doesn't show on their own payments: internal notes, our accounts, who is charged.
+HIRE_HIDDEN = {
+    "category_id": None,
+    "category_other_text": None,
+    "paid_from_payment_account_id": None,
+    "paid_to_payment_account_id": None,
+    "counter_account_id": None,
+    "exchange_rate": None,
+    "fee_amount": Decimal(0),
+    "eligible_amount_base": None,
+    "employee_id": None,
+    "employee_name": None,
+    "description": None,
+    "journal_entry_id": None,
+    "reversal_journal_entry_id": None,
+    "amended_from_id": None,
+    "submitted_by": None,
+    "created_by": None,
+    "reconciled_at": None,
+}
+HIRE_HIDDEN_COLUMNS = {"employees", "fee_amount", "fee_paid_by", "description", "your_share"}
 
 
 # ---- payment accounts ------------------------------------------------------------------------------
@@ -329,12 +353,18 @@ async def _allocations_out(
 async def _own_employee(session: AsyncSession, user: CurrentUser) -> Any:
     """None when the user reads every payment; otherwise their employee record, the only one whose payments
     (revenue split to them, salary paid to them, expenses tagged to or shared with them) they may see."""
+    own = await employees.for_user(session, user.id)
+    if own is not None and user.restricted:  # whatever role they were given
+        return own
     if user.can("payments.create") or user.can("reports.financial"):
         return None
-    own = await employees.for_user(session, user.id)
     if own is None:
         raise NotFound("Your user is not linked to an employee record")
     return own
+
+
+def _for_viewer(out: EntryOut, user: CurrentUser) -> EntryOut:
+    return out.model_copy(update=HIRE_HIDDEN) if user.restricted else out
 
 
 async def _entry_out(
@@ -510,6 +540,8 @@ async def list_entries(
     own = await _own_employee(session, user)
     if own:
         employee_id = own.id
+    if user.restricted:  # Only money that has actually been paid to them.
+        status, party_id, payment_account_id, account_ids = "submitted", own.party_id, None, None
     employee_party_id = (await employees.get(session, employee_id)).party_id if employee_id else None
     stmt = service.list_stmt(
         account_ids=await _ledger_accounts(session, account_ids),
@@ -525,6 +557,8 @@ async def list_entries(
         date_from=date_from,
         date_to=date_to,
         q=q,
+        # Searching a hidden field would let a hire guess what it says.
+        search_description=not (user.restricted),
     )
     if format != "json":
         rows = list((await session.execute(stmt.limit(20000))).scalars())
@@ -572,34 +606,41 @@ async def list_entries(
             "description",
             *(["your_share"] if own else []),
         ]
+        hidden = HIRE_HIDDEN_COLUMNS if user.restricted else set()
+        keep = [i for i, column in enumerate(header) if column not in hidden]
         return export_response(
             format,
             "payment-entries",
-            header,
+            [header[i] for i in keep],
             (
-                [
-                    r.number,
-                    r.posting_date,
-                    r.status,
-                    r.direction,
-                    parties.get(r.party_id, ""),
-                    projects.get(r.project_id, ""),
-                    "; ".join(splits.get(r.id, [])) or tagged.get(r.employee_id, ""),
-                    r.amount,
-                    r.currency,
-                    r.base_amount,
-                    r.fee_amount,
-                    r.fee_paid_by,
-                    r.reference_no,
-                    r.description,
-                    *([mine.get(r.id, r.base_amount)] if own else []),
-                ]
-                for r in rows
+                [row[i] for i in keep]
+                for row in (
+                    [
+                        r.number,
+                        r.posting_date,
+                        r.status,
+                        r.direction,
+                        parties.get(r.party_id, ""),
+                        projects.get(r.project_id, ""),
+                        "; ".join(splits.get(r.id, [])) or tagged.get(r.employee_id, ""),
+                        r.amount,
+                        r.currency,
+                        r.base_amount,
+                        r.fee_amount,
+                        r.fee_paid_by,
+                        r.reference_no,
+                        r.description,
+                        *([mine.get(r.id, r.base_amount)] if own else []),
+                    ]
+                    for r in rows
+                )
             ),
         )
     rows, total = await paginate(session, stmt, params)
     return Page(
-        items=await _entries_out(session, list(rows), only_employee=own.id if own else None),
+        items=[
+            _for_viewer(o, user) for o in await _entries_out(session, list(rows), only_employee=own.id if own else None)
+        ],
         total=total,
         page=params.page,
         page_size=params.page_size,
@@ -637,6 +678,8 @@ async def entry_totals(
     own = await _own_employee(session, user)
     if own:
         employee_id = own.id
+    if user.restricted:
+        status, party_id, payment_account_id, account_ids = "submitted", own.party_id, None, None
     employee_party_id = (await employees.get(session, employee_id)).party_id if employee_id else None
     stmt = service.list_stmt(
         account_ids=await _ledger_accounts(session, account_ids),
@@ -652,9 +695,32 @@ async def entry_totals(
         date_from=date_from,
         date_to=date_to,
         q=q,
+        # Searching a hidden field would let a hire guess what it says.
+        search_description=not (user.restricted),
     )
     t = await service.totals(session, stmt, share_of=own.id if own else None)
     return EntryTotalsOut(**t, base_currency=(await settings.base_currency(session)).code)
+
+
+class MyHireOut(BaseModel):
+    party_id: uuid.UUID
+    full_name: str
+
+
+@router.get("/payment-entries/my-hires", response_model=list[MyHireOut])
+async def my_hires(
+    user: CurrentUser = ReadOwnPayments, session: AsyncSession = Depends(get_session)
+) -> list[MyHireOut]:
+    """The signed-in employee's hires, to filter their payments by: on their projects now, or paid by them before."""
+    own = await employees.for_user(session, user.id)
+    if own is None or user.restricted:
+        return []
+    hires = await employees.all_hires(session)
+    current = {p.hire_employee_id for p in await projects.with_hires(session) if p.manager_employee_id == own.id}
+    paid = await service.parties_paid_for(session, employee_id=own.id, party_ids=[h.party_id for h in hires])
+    return [
+        MyHireOut(party_id=h.party_id, full_name=h.full_name) for h in hires if h.id in current or h.party_id in paid
+    ]
 
 
 @router.get("/payment-entries/proposal", response_model=list[SplitRow])
@@ -704,7 +770,9 @@ async def get_entry(
     own = await _own_employee(session, user)
     if own and not await service.involves(session, pe.id, employee_id=own.id, employee_party_id=own.party_id):
         raise NotFound("Payment entry not found")
-    return await _entry_out(session, pe, only_employee=own.id if own else None)
+    if user.restricted and (pe.status != "submitted" or pe.party_id != own.party_id):
+        raise NotFound("Payment entry not found")
+    return _for_viewer(await _entry_out(session, pe, only_employee=own.id if own else None), user)
 
 
 @router.get("/payment-entries/{pe_id}/preview", response_model=PaymentPreviewOut)

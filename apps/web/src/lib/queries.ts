@@ -9,6 +9,7 @@ import type {
   Currency,
   Department,
   Employee,
+  HireOption,
   Formula,
   Page,
   Party,
@@ -49,6 +50,11 @@ export function useEmployees(enabled = true) {
 
 export function useDepartments() {
   return useQuery({ queryKey: ["departments"], queryFn: () => api.get<Department[]>("/departments") });
+}
+
+/** Active hires to pick from on a project (names only). */
+export function useHireOptions(enabled = true) {
+  return useQuery({ queryKey: ["hire-options"], queryFn: () => api.get<HireOption[]>("/hires/options"), enabled });
 }
 
 export function useProjects(enabled = true) {

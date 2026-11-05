@@ -192,6 +192,57 @@ async def get(session: AsyncSession, pe_id: uuid.UUID, *, lock: bool = False) ->
     return pe
 
 
+async def has_employee_payments(session: AsyncSession, *, employee_id: uuid.UUID, party_id: uuid.UUID) -> bool:
+    """Whether a draft or submitted payment goes to this employee or is tagged to them."""
+    stmt = (
+        select(PaymentEntry.id)
+        .where(
+            PaymentEntry.status != "cancelled",
+            or_(PaymentEntry.employee_id == employee_id, PaymentEntry.party_id == party_id),
+        )
+        .limit(1)
+    )
+    return (await session.execute(stmt)).first() is not None
+
+
+async def parties_paid_for(
+    session: AsyncSession, *, employee_id: uuid.UUID, party_ids: list[uuid.UUID]
+) -> set[uuid.UUID]:
+    """Which of these parties have a submitted payment charged to this employee."""
+    if not party_ids:
+        return set()
+    rows = await session.execute(
+        select(PaymentEntry.party_id)
+        .where(
+            PaymentEntry.status == "submitted",
+            PaymentEntry.employee_id == employee_id,
+            PaymentEntry.party_id.in_(party_ids),
+        )
+        .distinct()
+    )
+    return set(rows.scalars())
+
+
+async def hire_paid_totals(
+    session: AsyncSession, *, party_ids: list[uuid.UUID], date_from: date, date_to: date
+) -> dict[tuple[uuid.UUID, uuid.UUID], Decimal]:
+    """{(hire's party, charged employee): paid} for submitted payments in the date range."""
+    if not party_ids:
+        return {}
+    rows = await session.execute(
+        select(PaymentEntry.party_id, PaymentEntry.employee_id, func.sum(PaymentEntry.base_amount))
+        .where(
+            PaymentEntry.status == "submitted",
+            PaymentEntry.direction == "pay",
+            PaymentEntry.party_id.in_(party_ids),
+            PaymentEntry.employee_id.is_not(None),
+            PaymentEntry.posting_date.between(date_from, date_to),
+        )
+        .group_by(PaymentEntry.party_id, PaymentEntry.employee_id)
+    )
+    return {(party, employee): total or Decimal(0) for party, employee, total in rows.all()}
+
+
 async def involves(
     session: AsyncSession, pe_id: uuid.UUID, *, employee_id: uuid.UUID, employee_party_id: uuid.UUID | None
 ) -> bool:
@@ -228,6 +279,7 @@ def list_stmt(
     employee_id: uuid.UUID | None = None,
     employee_party_id: uuid.UUID | None = None,
     account_ids: list[uuid.UUID] | None = None,
+    search_description: bool = True,
 ) -> Select[tuple[PaymentEntry]]:
     stmt = select(PaymentEntry).order_by(PaymentEntry.posting_date.desc(), PaymentEntry.number.desc())
     if employee_id:
@@ -270,13 +322,10 @@ def list_stmt(
         stmt = stmt.where(PaymentEntry.posting_date <= date_to)
     if q:
         like = f"%{q.strip()}%"
-        stmt = stmt.where(
-            or_(
-                PaymentEntry.number.ilike(like),
-                PaymentEntry.reference_no.ilike(like),
-                PaymentEntry.description.ilike(like),
-            )
-        )
+        fields = [PaymentEntry.number, PaymentEntry.reference_no]
+        if search_description:
+            fields.append(PaymentEntry.description)
+        stmt = stmt.where(or_(*(f.ilike(like) for f in fields)))
     return stmt
 
 
@@ -424,6 +473,11 @@ def check_expense_split(pe: PaymentEntry, rule: str | None) -> None:
         raise ValidationFailed(
             "A salary payment cannot be split", errors=[field_error("allocations", "Salary payments are not split")]
         )
+    if rule == "P4":
+        raise ValidationFailed(
+            "A hire's payment cannot be split",
+            errors=[field_error("allocations", "It is charged to the project manager")],
+        )
     if pe.employee_id:
         raise ValidationFailed(
             "Tag one employee or split between employees, not both",
@@ -454,7 +508,8 @@ async def submit(session: AsyncSession, *, actor_id: uuid.UUID, pe_id: uuid.UUID
     pe.eligible_amount_base = result.eligible_amount_base
     # Freeze the rates actually used (typed, or the saved rate for the date); later rate changes don't apply.
     pe.exchange_rate = result.exchange_rate
-    if result.employee_id and not pe.employee_id:
+    # A hire's payment always charges the project's manager, whatever the draft said.
+    if result.employee_id and (result.rule == "P4" or not pe.employee_id):
         pe.employee_id = result.employee_id
     if pe.direction == "internal_transfer":
         if pe.received_amount is None:

@@ -463,6 +463,10 @@ async def test_split_expense_is_reports_only(finance, scenario) -> None:  # type
     assert D(a["contribution"]) == D(a["net_revenue"]) - D(a["salary"]) - 500
     m = (await finance.get(f"{API}/reports/monthly-summary", params={"employee_ids": scenario["a"]})).json()
     assert D(m["totals"]["shared_expenses"]) == 500 and D(m["totals"]["profit"]) == D(a["contribution"])
+    # An employee's own figures show their share next to the expenses that lower their salary.
+    own = (await finance.get(f"{API}/employees/{scenario['a']}/salary")).json()
+    line = next(x for x in own["statements"] if x["period_label"] == "Nov 2026")
+    assert D(line["shared_expenses"]) == 500 and D(line["expenses"]) == 0
     # The employee filter on payments finds the shared bill.
     found = (await finance.get(PE, params={"employee_id": scenario["b"]})).json()
     assert expense["id"] in [p["id"] for p in found["items"]]
@@ -472,6 +476,8 @@ async def test_split_expense_is_reports_only(finance, scenario) -> None:  # type
     assert cancelled.status_code == 200
     perf = (await finance.get(f"{API}/reports/employee-performance")).json()
     assert all(D(r["shared_expenses"]) == 0 for r in perf["rows"])
+    own = (await finance.get(f"{API}/employees/{scenario['a']}/salary")).json()
+    assert D(next(x for x in own["statements"] if x["period_label"] == "Nov 2026")["shared_expenses"]) == 0
 
     # Tagged to one employee and split at once: refused.
     both = await finance.post(PE, json={**body, "employee_id": scenario["a"], "allocations": split})

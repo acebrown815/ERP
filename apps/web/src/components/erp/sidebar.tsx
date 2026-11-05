@@ -117,7 +117,12 @@ export function Sidebar({ collapsed = false, onNavigate }: { collapsed?: boolean
       return next;
     });
 
-  const sections = NAV.map((s) => ({ section: s, items: s.items.filter((i) => canSee(i, me.permissions)) })).filter((s) => s.items.length);
+  const sections = NAV.map((s) => ({
+    section: s,
+    items: s.items
+      .filter((i) => canSee(i, me.permissions, me.restricted_access))
+      .map((i) => (me.restricted_access && i.hireLabel ? { ...i, label: i.hireLabel } : i)),
+  })).filter((s) => s.items.length);
 
   if (collapsed) {
     return (

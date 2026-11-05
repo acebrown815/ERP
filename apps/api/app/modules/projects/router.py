@@ -7,9 +7,12 @@ from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import lookup
 from app.core.db import get_session
+from app.core.errors import Forbidden
 from app.core.pagination import Page, PageParams, page_params, paginate
-from app.modules.auth.api import CurrentUser, require
+from app.modules.auth.api import CurrentUser, require, require_any
+from app.modules.employees import api as employees
 from app.modules.projects import service
 from app.modules.rbac.api import Scope
 
@@ -22,14 +25,22 @@ MilestoneStatus = Literal["planned", "in_progress", "done", "cancelled"]
 Money = Annotated[Decimal, Field(ge=0, max_digits=20, decimal_places=4)]
 Percent = Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)]
 Pct = Annotated[Decimal, Field(gt=0, le=100, max_digits=7, decimal_places=4)]
+# Staff, plus employees running their own projects; service.edit_mode decides what each may change.
+EditProjects = Depends(require_any("projects.manage", "projects.create_own"))
 
 
 class MemberOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     employee_id: uuid.UUID
+    employee_name: str | None = None
     role: str | None
     default_allocation_pct: Decimal | None
+
+
+class PersonOut(BaseModel):
+    id: uuid.UUID
+    full_name: str
 
 
 class ProjectOut(BaseModel):
@@ -39,7 +50,11 @@ class ProjectOut(BaseModel):
     number: str
     name: str
     customer_party_id: uuid.UUID | None
+    customer_name: str | None = None
     manager_employee_id: uuid.UUID | None
+    manager_name: str | None = None
+    hire_employee_id: uuid.UUID | None
+    hire_name: str | None = None
     project_type_category_id: uuid.UUID
     project_type_other_text: str | None
     description: str | None
@@ -54,12 +69,22 @@ class ProjectOut(BaseModel):
     created_at: datetime
     version: int
     members: list[MemberOut] = []
+    # What the signed-in user may edit: full, own (work and hire), or nothing.
+    edit_mode: Literal["full", "own"] | None = None
+
+
+class MemberIn(BaseModel):
+    employee_id: uuid.UUID
+    role: str | None = Field(default=None, max_length=80)
+    default_allocation_pct: Pct | None = None
 
 
 class ProjectCreateIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     customer_party_id: uuid.UUID | None = None
     manager_employee_id: uuid.UUID | None = None
+    hire_employee_id: uuid.UUID | None = None
+    members: list[MemberIn] | None = Field(default=None, max_length=200)
     project_type_category_id: uuid.UUID
     project_type_other_text: str | None = Field(default=None, max_length=120)
     description: str | None = Field(default=None, max_length=10000)
@@ -78,6 +103,8 @@ class ProjectUpdateIn(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     customer_party_id: uuid.UUID | None = None
     manager_employee_id: uuid.UUID | None = None
+    hire_employee_id: uuid.UUID | None = None
+    members: list[MemberIn] | None = Field(default=None, max_length=200)
     project_type_category_id: uuid.UUID | None = None
     project_type_other_text: str | None = Field(default=None, max_length=120)
     description: str | None = Field(default=None, max_length=10000)
@@ -91,21 +118,33 @@ class ProjectUpdateIn(BaseModel):
     status: Status | None = None
 
 
-class MemberIn(BaseModel):
-    employee_id: uuid.UUID
-    role: str | None = Field(default=None, max_length=80)
-    default_allocation_pct: Pct | None = None
-
-
 class MembersIn(BaseModel):
     members: list[MemberIn] = Field(max_length=200)
 
 
-async def _out(session: AsyncSession, project: service.Project) -> ProjectOut:
-    members = await service.members(session, project.id)
-    return ProjectOut.model_validate(project).model_copy(
-        update={"members": [MemberOut.model_validate(m) for m in members]}
+async def _out(
+    session: AsyncSession, user: CurrentUser, viewer: service.Viewer, project: service.Project
+) -> ProjectOut:
+    rows = await service.members(session, project.id)
+    people = [project.manager_employee_id, project.hire_employee_id, *(m.employee_id for m in rows)]
+    names = await employees.names(session, [p for p in people if p])
+    members = [MemberOut.model_validate(m).model_copy(update={"employee_name": names.get(m.employee_id)}) for m in rows]
+    out = ProjectOut.model_validate(project).model_copy(
+        update={
+            "members": members,
+            "manager_name": names.get(project.manager_employee_id),
+            "hire_name": names.get(project.hire_employee_id),
+            "edit_mode": service.edit_mode(user, viewer, project),
+        }
     )
+    is_manager = viewer.employee_id is not None and project.manager_employee_id == viewer.employee_id
+    if project.customer_party_id and (viewer.restricted or is_manager or user.can("parties.read")):
+        parties = await lookup.resolve(session, "party", [project.customer_party_id])
+        out.customer_name = parties.get(project.customer_party_id)
+    if viewer.restricted:  # They see the work and the customer's name, never the money.
+        out.customer_party_id = out.contract_value = out.budget = None
+        out.members = [m.model_copy(update={"default_allocation_pct": None}) for m in members]
+    return out
 
 
 @router.get("", response_model=Page[ProjectOut])
@@ -114,13 +153,41 @@ async def list_projects(
     q: Annotated[str | None, Query(max_length=100)] = None,
     status: Status | None = None,
     customer_party_id: uuid.UUID | None = None,
+    hire_employee_id: uuid.UUID | None = None,
+    manager_employee_id: uuid.UUID | None = None,
     user: CurrentUser = Depends(require("projects.read", Scope.PROJECT)),
     session: AsyncSession = Depends(get_session),
 ) -> Page[ProjectOut]:
     only = None if user.scope_for("projects.read") == Scope.ALL else await service.visible_project_ids(session, user)
-    stmt = service.list_stmt(q=q, status=status, customer_party_id=customer_party_id, only_ids=only)
+    stmt = service.list_stmt(
+        q=q,
+        status=status,
+        customer_party_id=customer_party_id,
+        only_ids=only,
+        hire_employee_id=hire_employee_id,
+        manager_employee_id=manager_employee_id,
+    )
     rows, total = await paginate(session, stmt, params)
-    return Page(items=[await _out(session, p) for p in rows], total=total, page=params.page, page_size=params.page_size)
+    viewer = await service.viewer_for(session, user)
+    return Page(
+        items=[await _out(session, user, viewer, p) for p in rows],
+        total=total,
+        page=params.page,
+        page_size=params.page_size,
+    )
+
+
+@router.get("/my-managers", response_model=list[PersonOut])
+async def my_managers(
+    user: CurrentUser = Depends(require("projects.read", Scope.PROJECT)),
+    session: AsyncSession = Depends(get_session),
+) -> list[PersonOut]:
+    """For a hire: the project managers they already work for, who a new project can be created under."""
+    viewer = await service.viewer_for(session, user)
+    if not viewer.is_hire or viewer.employee_id is None:
+        return []
+    names = await employees.names(session, list(await service.managers_of_hire(session, viewer.employee_id)))
+    return [PersonOut(id=i, full_name=n) for i, n in sorted(names.items(), key=lambda x: x[1].lower())]
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
@@ -131,54 +198,63 @@ async def get_project(
 ) -> ProjectOut:
     project = await service.get(session, project_id)
     await service.ensure_visible(session, user, "projects.read", project)
-    return await _out(session, project)
+    return await _out(session, user, await service.viewer_for(session, user), project)
 
 
 @router.post("", response_model=ProjectOut, status_code=201)
 async def create_project(
     body: ProjectCreateIn,
-    user: CurrentUser = Depends(require("projects.manage", Scope.PROJECT)),
+    user: CurrentUser = EditProjects,
     session: AsyncSession = Depends(get_session),
 ) -> ProjectOut:
-    project = await service.create(session, actor_id=user.id, data=body.model_dump())
+    project = await service.create_by(
+        session,
+        user=user,
+        data=body.model_dump(exclude={"members"}),
+        rows=[m.model_dump() for m in body.members] if body.members is not None else None,
+    )
     await session.commit()
-    return await _out(session, project)
+    return await _out(session, user, await service.viewer_for(session, user), project)
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)
 async def update_project(
     project_id: uuid.UUID,
     body: ProjectUpdateIn,
-    user: CurrentUser = Depends(require("projects.manage", Scope.PROJECT)),
+    user: CurrentUser = EditProjects,
     session: AsyncSession = Depends(get_session),
 ) -> ProjectOut:
     project = await service.get(session, project_id)
     await service.can_manage(session, user, project)
-    project = await service.update(
+    project = await service.update_by(
         session,
-        actor_id=user.id,
-        project_id=project_id,
+        user=user,
+        project=project,
         version=body.version,
-        changes=body.model_dump(exclude_unset=True, exclude={"version"}),
+        changes=body.model_dump(exclude_unset=True, exclude={"version", "members"}),
+        rows=[m.model_dump() for m in body.members] if body.members is not None else None,
     )
     await session.commit()
-    return await _out(session, project)
+    return await _out(session, user, await service.viewer_for(session, user), project)
 
 
 @router.put("/{project_id}/members", response_model=ProjectOut)
 async def set_members(
     project_id: uuid.UUID,
     body: MembersIn,
-    user: CurrentUser = Depends(require("projects.manage", Scope.PROJECT)),
+    user: CurrentUser = EditProjects,
     session: AsyncSession = Depends(get_session),
 ) -> ProjectOut:
     project = await service.get(session, project_id)
     await service.can_manage(session, user, project)
+    viewer = await service.viewer_for(session, user)
+    if service.edit_mode(user, viewer, project) != service.FULL:
+        raise Forbidden("Only staff can change the team")
     await service.set_members(
         session, actor_id=user.id, project_id=project_id, rows=[m.model_dump() for m in body.members]
     )
     await session.commit()
-    return await _out(session, project)
+    return await _out(session, user, viewer, project)
 
 
 # ---- milestones ------------------------------------------------------------------------------------
@@ -225,7 +301,7 @@ async def list_milestones(
 async def create_milestone(
     project_id: uuid.UUID,
     body: MilestoneIn,
-    user: CurrentUser = Depends(require("projects.manage", Scope.PROJECT)),
+    user: CurrentUser = EditProjects,
     session: AsyncSession = Depends(get_session),
 ) -> service.Milestone:
     await service.can_manage_id(session, user, project_id)
@@ -238,7 +314,7 @@ async def create_milestone(
 async def update_milestone(
     milestone_id: uuid.UUID,
     body: MilestoneUpdateIn,
-    user: CurrentUser = Depends(require("projects.manage", Scope.PROJECT)),
+    user: CurrentUser = EditProjects,
     session: AsyncSession = Depends(get_session),
 ) -> service.Milestone:
     m = await service.get_milestone(session, milestone_id)
@@ -257,7 +333,7 @@ async def update_milestone(
 @milestones_router.delete("/{milestone_id}", status_code=204)
 async def delete_milestone(
     milestone_id: uuid.UUID,
-    user: CurrentUser = Depends(require("projects.manage", Scope.PROJECT)),
+    user: CurrentUser = EditProjects,
     session: AsyncSession = Depends(get_session),
 ) -> Response:
     m = await service.get_milestone(session, milestone_id)

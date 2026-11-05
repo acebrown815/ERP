@@ -75,6 +75,12 @@ export default function MonthlySummaryPage() {
   const trend = (f: (m: Month) => string) => rows.map((m) => num(f(m)));
   const vsPrev = periods === 12 ? "vs the year before" : periods === 24 ? "vs the 2 years before" : `vs previous ${periods} months`;
   const base = r?.base_currency ?? "";
+  // What the selected employees paid their hires in the range. It's already part of their expenses.
+  const hirePay = [...rows.flatMap((m) => m.hire_payments ?? []).reduce((byHire, p) => {
+    const seen = byHire.get(p.hire_id);
+    return byHire.set(p.hire_id, { name: p.hire_name, amount: sum([seen?.amount ?? "0", p.amount]) });
+  }, new Map<string, { name: string; amount: string }>())].map(([id, x]) => ({ id, ...x }));
+  const showHires = emp && hirePay.length > 0;
 
   const chartData = rows.map((m) => ({
     label: shortLabel(m.label),
@@ -164,6 +170,23 @@ export default function MonthlySummaryPage() {
             </CardContent>
           </Card>
 
+          {showHires && (
+            <Card className="mb-6">
+              <CardHeader><CardTitle>Hired managers · {span}</CardTitle></CardHeader>
+              <CardContent>
+                <ul className="flex flex-col gap-1 text-sm">
+                  {hirePay.map((h) => (
+                    <li key={h.id} className="flex justify-between gap-3">
+                      <span>{h.name}</span>
+                      <span className="tabular">{formatAmount(h.amount)} {base}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-3 text-xs text-muted-foreground">Already included in Expenses above. It comes off revenue before salary is calculated.</p>
+              </CardContent>
+            </Card>
+          )}
+
           <Card className="overflow-x-auto">
             <Table>
               <THead>
@@ -171,6 +194,7 @@ export default function MonthlySummaryPage() {
                   <TH>Month</TH>
                   <TH className="text-right">{L.income}</TH>
                   <TH className="text-right" title={emp ? "Employees: expenses tagged to them plus their share of split expenses. Not assigned: expenses nobody carries" : undefined}>Expenses</TH>
+                  {showHires && <TH className="text-right" title="Paid to hired managers. Already included in Expenses">Of which hired managers</TH>}
                   <TH className="text-right" title={emp ? "Paid toward this month's salary, whenever it was paid" : undefined}>Salary paid</TH>
                   <TH className="text-right" title={emp ? "Revenue − expenses − salary earned: what they leave the company" : undefined}>{L.profit}</TH>
                   <TH className="text-right">Margin</TH>
@@ -196,6 +220,7 @@ export default function MonthlySummaryPage() {
                       </TD>
                       <TD className="tabular text-right">{drillable ? <DrillAmount value={row.income} drill={{ ...range, direction: "receive" }} /> : formatAmount(row.income)}</TD>
                       <TD className="tabular text-right">{drillable ? <DrillAmount value={row.expenses} drill={{ ...range, direction: "pay" }} /> : formatAmount(row.expenses)}</TD>
+                      {showHires && <TD className="tabular text-right text-muted-foreground">{formatAmount(row.hired_manager_pay ?? "0")}</TD>}
                       <TD className="tabular text-right text-muted-foreground">{formatAmount(row.salary_paid)}</TD>
                       <TD className={cn("tabular text-right font-medium", sign(row.profit) < 0 && "text-destructive")}>{formatAmount(row.profit)}</TD>
                       <TD className="text-right"><Margin value={row.margin_pct} /></TD>
@@ -214,6 +239,7 @@ export default function MonthlySummaryPage() {
                   <TD>Total, {rows.length} months ({base})</TD>
                   <TD className="tabular text-right">{formatAmount(sum(rows.map((m) => m.income)))}</TD>
                   <TD className="tabular text-right">{formatAmount(sum(rows.map((m) => m.expenses)))}</TD>
+                  {showHires && <TD className="tabular text-right">{formatAmount(sum(rows.map((m) => m.hired_manager_pay ?? "0")))}</TD>}
                   <TD className="tabular text-right">{formatAmount(sum(rows.map((m) => m.salary_paid)))}</TD>
                   <TD className={cn("tabular text-right", sign(sum(rows.map((m) => m.profit))) < 0 && "text-destructive")}>{formatAmount(sum(rows.map((m) => m.profit)))}</TD>
                   <TD />

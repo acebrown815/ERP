@@ -31,8 +31,9 @@ COUNTER_ROOTS = {
     "pay": ("expense", "equity", "liability", "asset"),
 }
 RULE_COUNTER_ROOTS = {"R1": ("income",), "R2": ("income",), "P1": ("expense", "asset")}
-FIXED_COUNTER = {"R3": "owner_capital", "P2": "salary_expense", "P3": "owner_drawings"}
-RULE_PARTY_KINDS = {"R1": ("customer", "other"), "P1": ("supplier", "other"), "P2": ("employee",)}
+FIXED_COUNTER = {"R3": "owner_capital", "P2": "salary_expense", "P3": "owner_drawings", "P4": "hire_fees"}
+RULE_PARTY_KINDS = {"R1": ("customer", "other"), "P1": ("supplier", "other"), "P2": ("employee",), "P4": ("employee",)}
+REQUIRED_PARTY = {"R1": "the customer", "P2": "the employee", "P4": "the project's hire"}
 
 
 @dataclass
@@ -226,8 +227,8 @@ async def build(session: AsyncSession, pe: PaymentEntry) -> Posting:
     if pe.direction == "internal_transfer" and pe.party_id:
         errors.add("party_id", "Transfers between our own accounts have no party")
     kinds = RULE_PARTY_KINDS.get(rule or "")
-    if kinds and rule in ("R1", "P2") and party is None and "party_id" not in {e["field"] for e in errors.items}:
-        errors.add("party_id", "Choose the " + ("customer" if rule == "R1" else "employee"), "required")
+    if kinds and rule in REQUIRED_PARTY and party is None and "party_id" not in {e["field"] for e in errors.items}:
+        errors.add("party_id", f"Choose {REQUIRED_PARTY[rule]}", "required")
     if party and kinds and party.kind not in kinds:
         errors.add("party_id", f"Must be a {' or '.join(kinds)}")
     if party and not party.is_active:
@@ -237,11 +238,16 @@ async def build(session: AsyncSession, pe: PaymentEntry) -> Posting:
     if rule == "P2" and party:
         employee = await employees.by_party(session, party.id)
         employee_id = employee.id if employee else None
-    elif employee_id:
+        if employee and employee.is_hired_manager:
+            errors.add("party_id", "Hired managers get no salary")
+    elif employee_id and rule != "P4":
         try:
-            await employees.get(session, employee_id)
+            tagged = await employees.get(session, employee_id)
         except NotFound:
             errors.add("employee_id", "Unknown employee")
+        else:
+            if tagged.is_hired_manager:
+                errors.add("employee_id", "An expense can't be charged to a hired manager")
 
     project = None
     if pe.project_id:
@@ -249,8 +255,10 @@ async def build(session: AsyncSession, pe: PaymentEntry) -> Posting:
             project = await projects.get(session, pe.project_id)
         except NotFound:
             errors.add("project_id", "Unknown project")
-    if project and party and project.customer_party_id and project.customer_party_id != party.id:
+    if rule != "P4" and project and party and project.customer_party_id and project.customer_party_id != party.id:
         warnings.append(f"{project.name} belongs to a different customer")
+    if rule == "P4":
+        employee_id = await _charged_for_hire(session, pe, party, project, rate, bp, errors, warnings)
 
     # Counter account -------------------------------------------------------------------------------
     counter = None
@@ -374,6 +382,42 @@ async def build(session: AsyncSession, pe: PaymentEntry) -> Posting:
         received_exchange_rate=dst_rate,
         warnings=warnings,
     )
+
+
+async def _charged_for_hire(
+    session: AsyncSession,
+    pe: PaymentEntry,
+    party: Any,
+    project: Any,
+    rate: Decimal,
+    precision: int,
+    errors: _Errors,
+    warnings: list[str],
+) -> uuid.UUID | None:
+    """A hire is paid on a project, and the amount comes off that project's manager's revenue. The manager
+    comes from the project, never from the form, so nobody else can be charged."""
+    if project is None:
+        if pe.project_id is None:
+            errors.add("project_id", "Choose the project this payment is for", "required")
+        return None
+    hire = await employees.by_party(session, party.id) if party else None
+    if party and (hire is None or hire.id != project.hire_employee_id):
+        errors.add("party_id", "Must be this project's hire")
+        return None
+    if project.manager_employee_id is None:
+        errors.add("project_id", "This project has no manager to charge", "required")
+        return None
+    manager = await employees.get(session, project.manager_employee_id)
+    if manager.status == "terminated":
+        warnings.append(f"{manager.full_name} has left, but will still be charged")
+    if pe.amount:
+        net = await salary.net_revenue(session, manager.id, pe.posting_date)
+        if quantize(pe.amount * rate, precision) > net:
+            warnings.append(
+                f"This is more than {manager.full_name}'s net revenue for the salary period ({net}). "
+                "The excess lowers their revenue to zero and no further, so the company absorbs it."
+            )
+    return manager.id
 
 
 async def _resolve_counter(

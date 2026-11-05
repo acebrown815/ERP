@@ -423,6 +423,15 @@ async def remove_expense(session: AsyncSession, *, payment_entry_id: uuid.UUID) 
     await session.flush()
 
 
+async def net_revenue(session: AsyncSession, employee_id: uuid.UUID, on: date) -> Decimal:
+    """An employee's revenue minus tagged expenses so far, in the salary period containing `on`."""
+    period = await period_for(session, on)
+    span = {"date_from": period.start_date, "date_to": period.end_date, "employee_ids": [employee_id]}
+    gross = (await attribution.employee_totals(session, **span)).get(employee_id) or ZERO
+    spent = (await expense_totals(session, **span)).get(employee_id) or ZERO
+    return gross - spent
+
+
 async def expense_totals(
     session: AsyncSession, *, date_from: date, date_to: date, employee_ids: list[uuid.UUID] | None = None
 ) -> dict[uuid.UUID, Decimal]:
@@ -467,6 +476,11 @@ async def list_adjustments(
     return sorted((a for rows in adj.values() for a in rows), key=lambda a: a.created_at)
 
 
+async def has_adjustments(session: AsyncSession, employee_id: uuid.UUID) -> bool:
+    stmt = select(SalaryAdjustment.id).where(SalaryAdjustment.employee_id == employee_id).limit(1)
+    return (await session.execute(stmt)).first() is not None
+
+
 async def add_adjustment(
     session: AsyncSession,
     *,
@@ -481,6 +495,7 @@ async def add_adjustment(
     period = await get_period(session, period_id, lock=True)
     await _require_open(period)
     await employees.get(session, employee_id)
+    await employees.assert_not_hire(session, employee_id)
     if amount == 0 or (kind != "correction" and amount < 0):
         raise ValidationFailed(
             "Invalid amount",

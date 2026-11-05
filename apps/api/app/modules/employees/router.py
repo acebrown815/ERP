@@ -7,9 +7,9 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
-from app.core.errors import NotFound
+from app.core.errors import Forbidden, NotFound
 from app.core.pagination import Page, PageParams, page_params, paginate
-from app.modules.auth.api import CurrentUser, current_user, require
+from app.modules.auth.api import CurrentUser, current_user, require, require_any
 from app.modules.employees import service
 from app.modules.employees.models import Employee
 from app.modules.rbac.api import Scope
@@ -38,12 +38,22 @@ class EmployeeOut(BaseModel):
     end_date: date | None
     timezone: str | None
     notes: str | None
+    is_hired_manager: bool
     created_at: datetime
     version: int
 
 
 class EmployeeDetailOut(EmployeeOut):
     bidding_profile_names: list[str]
+
+
+class HireOptionOut(BaseModel):
+    """All an employee learns about hires when picking one for their project."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    full_name: str
 
 
 class EmployeeCreateIn(BaseModel):
@@ -60,6 +70,7 @@ class EmployeeCreateIn(BaseModel):
     timezone: str | None = Field(default=None, max_length=64)
     notes: str | None = Field(default=None, max_length=5000)
     user_id: uuid.UUID | None = None
+    is_hired_manager: bool = False
 
 
 class EmployeeUpdateIn(BaseModel):
@@ -77,6 +88,7 @@ class EmployeeUpdateIn(BaseModel):
     timezone: str | None = Field(default=None, max_length=64)
     notes: str | None = Field(default=None, max_length=5000)
     user_id: uuid.UUID | None = None
+    is_hired_manager: bool | None = None
 
 
 class DepartmentOut(BaseModel):
@@ -112,17 +124,34 @@ async def list_employees(
     q: Annotated[str | None, Query(max_length=100)] = None,
     status: Status | None = None,
     department_id: uuid.UUID | None = None,
+    hired: bool | None = None,
     user: CurrentUser = Depends(require("employees.read")),
     session: AsyncSession = Depends(get_session),
 ) -> Page[EmployeeOut]:
     only_user, only_ids = await _scope_filter(session, user)
-    stmt = service.list_stmt(q=q, status=status, department_id=department_id, only_user_id=only_user)
+    stmt = service.list_stmt(q=q, status=status, department_id=department_id, only_user_id=only_user, hired=hired)
     if only_ids is not None:
         stmt = stmt.where(Employee.id.in_(only_ids))
     rows, total = await paginate(session, stmt, params)
     return Page(
-        items=[EmployeeOut.model_validate(r) for r in rows], total=total, page=params.page, page_size=params.page_size
+        items=[EmployeeOut.model_validate(r) for r in rows],
+        total=total,
+        page=params.page,
+        page_size=params.page_size,
     )
+
+
+@router.get("/hires/options", response_model=list[HireOptionOut])
+async def hire_options(
+    user: CurrentUser = Depends(require_any("projects.create_own", "projects.manage")),
+    session: AsyncSession = Depends(get_session),
+) -> Any:
+    """Active hires to pick from on a project: for staff, and for full-time employees on their own projects."""
+    if not user.can("projects.manage"):
+        own = await service.for_user(session, user.id)
+        if own is None or not await service.is_full_time(session, own):
+            raise Forbidden("Only full-time employees can select a hire")
+    return await service.active_hires(session)
 
 
 @router.get("/employees/me", response_model=EmployeeOut)

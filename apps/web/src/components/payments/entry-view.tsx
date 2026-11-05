@@ -188,6 +188,9 @@ export function PaymentEntryView({ entry }: { entry: PaymentEntry }) {
                 </Row>
               )}
               {entry.project_name && <Row label="Project">{entry.project_name}</Row>}
+              {entry.employee_name && purposes.data?.find((c) => c.id === entry.purpose_category_id)?.system_key === "hire_payment" && (
+                <Row label="Charged to">{entry.employee_name}</Row>
+              )}
               {entry.salary_period_label && <Row label="Salary for">{entry.salary_period_label}</Row>}
               {entry.reference_no && <Row label="Reference">{entry.reference_no}</Row>}
               {entry.description && <Row label="Description">{entry.description}</Row>}
@@ -231,6 +234,8 @@ export function PaymentEntryView({ entry }: { entry: PaymentEntry }) {
       </div>
 
       <div className="flex flex-col gap-4 xl:sticky xl:top-20 xl:self-start">
+        {/* Someone reading their own payment has no actions, so no empty card. */}
+        {(can("payments.cancel") || can("payments.submit") || can("payments.create")) && (
         <Card>
           <CardContent className="flex flex-col gap-2 py-4">
             {entry.status === "submitted" && can("payments.cancel") && (
@@ -250,6 +255,7 @@ export function PaymentEntryView({ entry }: { entry: PaymentEntry }) {
             )}
           </CardContent>
         </Card>
+        )}
         {/* The ledger is for finance; employees reading their own payments don't get it. */}
         {seesLedger && entry.journal_entry_id && <JournalTable id={entry.journal_entry_id} title="Ledger entry" />}
         {seesLedger && entry.reversal_journal_entry_id && <JournalTable id={entry.reversal_journal_entry_id} title="Reversal" />}

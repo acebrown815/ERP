@@ -7,7 +7,7 @@ from app.modules.auth.api import CurrentUser
 
 
 async def _can_read(_: AsyncSession, user: CurrentUser, __: str) -> bool:
-    return True  # company documents (logo, registration papers) are visible to every signed-in user
+    return not user.restricted  # company documents (logo, registration papers) are visible to every signed-in user
 
 
 async def _can_write(_: AsyncSession, user: CurrentUser, __: str) -> bool:

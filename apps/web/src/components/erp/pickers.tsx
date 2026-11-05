@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { Combobox } from "@/components/erp/combobox";
 import { api } from "@/lib/api";
-import { useAccounts, useCompany, useEmployees, useParty, usePaymentAccounts, useProjects } from "@/lib/queries";
+import { useAccounts, useCompany, useEmployees, useHireOptions, useParty, usePaymentAccounts, useProjects } from "@/lib/queries";
 import type { Account, Page, Party } from "@/lib/types";
 
 type Common = {
@@ -76,16 +76,43 @@ export function PartyPicker({
   );
 }
 
-export function EmployeePicker({ placeholder = "Choose employee…", ...rest }: Common & { placeholder?: string }) {
+export function EmployeePicker({
+  placeholder = "Choose employee…",
+  excludeHires = false,
+  ...rest
+}: Common & {
+  placeholder?: string;
+  /** Leave out hired managers: for anything about revenue, salary or the project team, which they aren't part of. */
+  excludeHires?: boolean;
+}) {
   const { data = [] } = useEmployees();
   const options = data
     .filter((e) => e.status !== "terminated" || e.id === rest.value)
+    .filter((e) => !excludeHires || !e.is_hired_manager || e.id === rest.value)
     .map((e) => ({ value: e.id, label: e.full_name, hint: [e.number, e.job_title].filter(Boolean).join(" · ") }));
   return <Combobox {...rest} options={options} placeholder={placeholder} />;
 }
 
-export function ProjectPicker({ placeholder = "Choose project…", ...rest }: Common & { placeholder?: string }) {
+/** Active hired managers. `currentName` keeps a project's current hire showing even if they've since left. */
+export function HirePicker({ placeholder = "No hire", currentName, ...rest }: Common & { placeholder?: string; currentName?: string | null }) {
+  const { data = [] } = useHireOptions();
+  const options = data.map((h) => ({ value: h.id, label: h.full_name }));
+  if (rest.value && currentName && !options.some((o) => o.value === rest.value)) options.unshift({ value: rest.value, label: currentName });
+  return <Combobox {...rest} options={options} placeholder={placeholder} />;
+}
+
+export function ProjectPicker({
+  placeholder = "Choose project…",
+  onlyWithHire = false,
+  ...rest
+}: Common & { placeholder?: string; onlyWithHire?: boolean }) {
   const { data = [] } = useProjects();
-  const options = data.map((p) => ({ value: p.id, label: p.name, hint: `${p.number} · ${p.status.replace("_", " ")}` }));
+  const options = data
+    .filter((p) => !onlyWithHire || p.hire_employee_id || p.id === rest.value)
+    .map((p) => ({
+      value: p.id,
+      label: p.name,
+      hint: onlyWithHire && p.hire_name ? `Hire: ${p.hire_name}` : `${p.number} · ${p.status.replace("_", " ")}`,
+    }));
   return <Combobox {...rest} options={options} placeholder={placeholder} />;
 }

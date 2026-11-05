@@ -4,6 +4,15 @@ from app.modules.rbac.permissions import Scope
 
 A, P, OWN = Scope.ALL, Scope.PROJECT, Scope.OWN
 
+# What every hired manager, contractor and freelancer can do. It comes from their employee record, linked to their
+# sign-in, not from a role. 'project' scope means only the projects they're connected to: tasks there, nothing else.
+RESTRICTED_GRANTS = {
+    "projects.read": P,
+    "tasks.manage": P,
+    "tasks.update_own": P,
+    "payments.read_own": A,
+}
+
 DEFAULT_ROLES: list[dict] = [
     {
         "key": "admin",
@@ -38,6 +47,7 @@ DEFAULT_ROLES: list[dict] = [
             "salary.read": A,
             "salary.adjust": A,
             "salary.close_period": A,
+            "hired_managers.read": A,
             "projects.read": A,
             "projects.read_financials": A,
         },
@@ -70,9 +80,28 @@ DEFAULT_ROLES: list[dict] = [
             "revenue.read": OWN,
             "comp_formulas.read": OWN,
             "salary.read": OWN,
+            "hired_managers.read": OWN,
             "projects.read": P,
+            "projects.create_own": OWN,
             "tasks.update_own": OWN,
             "bidding.read": OWN,
+        },
+    },
+    {
+        "key": "hired_manager",
+        "name": "Hired Manager",
+        "description": "Label only: access comes from the linked employee being marked as a hired manager.",
+        "grants": {},
+    },
+    {
+        "key": "supervisor",
+        "name": "Supervisor",
+        "description": "Read-only view of every project and hired manager, plus the audit log.",
+        "grants": {
+            "audit.read": A,
+            "employees.read": A,
+            "hired_managers.read": A,
+            "projects.read": A,
         },
     },
 ]

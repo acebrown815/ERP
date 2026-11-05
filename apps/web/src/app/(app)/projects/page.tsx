@@ -4,7 +4,8 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Plus, Search } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
 
 import { useCategories } from "@/components/erp/category-select";
 import { DataTable } from "@/components/erp/data-table";
@@ -17,27 +18,37 @@ import { Input, Select } from "@/components/ui/input";
 import { Badge, Card } from "@/components/ui/misc";
 import { api } from "@/lib/api";
 import { formatAmount, sign } from "@/lib/money";
-import { useEmployees } from "@/lib/queries";
+import { useHireOptions } from "@/lib/queries";
 import { useCan, useMe } from "@/lib/session";
 import type { Page, Project, ProjectFinancials, TaskProgress } from "@/lib/types";
 
 type MyProjectRow = { project_id: string; received: string; paid: string; net: string; payments: number; base_currency: string };
 import { cn, formatDate } from "@/lib/utils";
 
-export default function ProjectsPage() {
+function ProjectsList() {
   const can = useCan();
+  const isHire = useMe().restricted_access;
+  const params = useSearchParams();
+  const [hire, setHire] = useState(params.get("hire") ?? "");
+  const [manager, setManager] = useState("");
+  const hires = useHireOptions(useMe().can_select_hire);
+  const managers = useQuery({
+    queryKey: ["my-managers"],
+    queryFn: () => api.get<{ id: string; full_name: string }[]>("/projects/my-managers"),
+    enabled: isHire,
+  });
   // Whole-project profit only for those who see every project's financials (finance, admin). Everyone else,
   // project managers included, sees what their own payments on each project come to.
   const allFinancials = useMe().permissions["projects.read_financials"] === "all";
-  const employees = useEmployees();
   const types = useCategories("project_type", true);
   const [page, setPage] = useState(1);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
   const [creating, setCreating] = useState(false);
   const projects = useQuery({
-    queryKey: ["projects", page, q, status],
-    queryFn: () => api.get<Page<Project>>("/projects", { page, page_size: 25, q, status }),
+    queryKey: ["projects", page, q, status, hire, manager],
+    queryFn: () =>
+      api.get<Page<Project>>("/projects", { page, page_size: 25, q, status, hire_employee_id: hire || undefined, manager_employee_id: manager || undefined }),
     placeholderData: keepPreviousData,
   });
   const ids = projects.data?.items.map((p) => p.id) ?? [];
@@ -63,7 +74,6 @@ export default function ProjectsPage() {
     enabled: mineOnly,
     retry: false,
   });
-  const name = (id: string | null | undefined) => employees.data?.find((e) => e.id === id)?.full_name;
   const columns = useMemo<ColumnDef<Project, unknown>[]>(
     () => [
       {
@@ -77,7 +87,8 @@ export default function ProjectsPage() {
         ),
       },
       { id: "type", header: "Type", cell: ({ row }) => types.data?.find((t) => t.id === row.original.project_type_category_id)?.name ?? "—" },
-      { id: "manager", header: "Manager", cell: ({ row }) => name(row.original.manager_employee_id) ?? "—" },
+      { id: "manager", header: "Manager", cell: ({ row }) => row.original.manager_name ?? "—" },
+      ...(isHire ? [] : [{ id: "hire", header: "Hire", cell: ({ row }: { row: { original: Project } }) => row.original.hire_name ?? "—" } satisfies ColumnDef<Project, unknown>]),
       {
         id: "progress",
         header: "Progress",
@@ -96,13 +107,17 @@ export default function ProjectsPage() {
           );
         },
       },
-      {
-        id: "value",
-        header: () => <span className="block text-right">Contract</span>,
-        cell: ({ row }) => (
-          <span className="tabular block text-right">{row.original.contract_value ? `${formatAmount(row.original.contract_value)} ${row.original.currency}` : "—"}</span>
-        ),
-      },
+      ...(isHire
+        ? []
+        : [
+            {
+              id: "value",
+              header: () => <span className="block text-right">Contract</span>,
+              cell: ({ row }: { row: { original: Project } }) => (
+                <span className="tabular block text-right">{row.original.contract_value ? `${formatAmount(row.original.contract_value)} ${row.original.currency}` : "—"}</span>
+              ),
+            } satisfies ColumnDef<Project, unknown>,
+          ]),
       ...(allFinancials
         ? [
             {
@@ -162,14 +177,14 @@ export default function ProjectsPage() {
         cell: ({ row }) => <Badge variant={PROJECT_STATUS[row.original.status]?.variant}>{PROJECT_STATUS[row.original.status]?.label}</Badge>,
       },
     ],
-    [types.data, employees.data, progress.data, financials.data, mine.data], // eslint-disable-line react-hooks/exhaustive-deps
+    [types.data, progress.data, financials.data, mine.data, isHire], // eslint-disable-line react-hooks/exhaustive-deps
   );
   return (
     <>
       <PageHeader
-        title="Projects"
-        description="Customer engagements: team and revenue split, milestones, tasks, timeline and financials."
-        actions={can("projects.manage") && <Button onClick={() => setCreating(true)}><Plus /> New project</Button>}
+        title={isHire ? "My projects" : "Projects"}
+        description={isHire ? "The projects you've been connected to." : "Customer engagements: team and revenue split, milestones, tasks, timeline and financials."}
+        actions={!isHire && (can("projects.manage") || can("projects.create_own")) && <Button onClick={() => setCreating(true)}><Plus /> New project</Button>}
       />
       <Card>
         <div className="flex flex-col gap-2 border-b p-3 sm:flex-row">
@@ -181,6 +196,18 @@ export default function ProjectsPage() {
             <option value="">All statuses</option>
             {Object.entries(PROJECT_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </Select>
+          {!isHire && (hires.data?.length ?? 0) > 0 && (
+            <Select aria-label="Hire" className="sm:w-48" value={hire} onChange={(e) => { setHire(e.target.value); setPage(1); }}>
+              <option value="">Any hire</option>
+              {hires.data?.map((h) => <option key={h.id} value={h.id}>{h.full_name}</option>)}
+            </Select>
+          )}
+          {isHire && (managers.data?.length ?? 0) > 1 && (
+            <Select aria-label="Project manager" className="sm:w-48" value={manager} onChange={(e) => { setManager(e.target.value); setPage(1); }}>
+              <option value="">Any project manager</option>
+              {managers.data?.map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}
+            </Select>
+          )}
         </div>
         <DataTable
           columns={columns}
@@ -189,10 +216,18 @@ export default function ProjectsPage() {
           error={projects.error}
           getRowId={(p) => p.id}
           pagination={projects.data && { page, pageSize: 25, total: projects.data.total, onPageChange: setPage }}
-          empty={<EmptyState title="No projects yet" />}
+          empty={<EmptyState title="No projects yet" description={isHire ? "A project appears here once you've been connected to it." : undefined} />}
         />
       </Card>
       {creating && <ProjectDialog project={null} onClose={() => setCreating(false)} />}
     </>
+  );
+}
+
+export default function ProjectsPage() {
+  return (
+    <Suspense>
+      <ProjectsList />
+    </Suspense>
   );
 }
