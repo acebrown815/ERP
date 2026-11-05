@@ -63,12 +63,17 @@ Restart `api` after changing API code: it runs without `--reload`, which hangs o
 ```bash
 cd apps/api && pytest -q                         # needs the dev database (erp_test) running
 ruff check app tests migrations && ruff format --check app tests migrations
+mypy app
 alembic check                                    # migrations match models
 
 cd apps/web && npm run typecheck && npm run lint && npm test && npm run build
+npx playwright install chromium                  # once
+npm run test:e2e                                 # browser tests; needs the dev database, and web stopped (it rebuilds .next)
 ```
 
 API tests use a real PostgreSQL database because triggers and constraints are part of the design. Point them elsewhere with `ERP_TEST_DATABASE_URL`.
+
+Browser tests (`apps/web/e2e`) start their own API and a production build of the web app on ports 8100 and 3100, against a database `erp_e2e` that they delete and rebuild on every run. Point them elsewhere with `E2E_DATABASE_URL`; the name must end in `_e2e`.
 
 ## Deployment (Docker Compose)
 

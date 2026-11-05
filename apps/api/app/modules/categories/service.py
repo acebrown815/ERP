@@ -109,7 +109,9 @@ async def paths(session: AsyncSession, categories: list[Category]) -> dict[uuid.
     by_id = {c.id: c for c in all_rows}
 
     def path(c: Category) -> str:
-        names, cur, guard = [], c, 0
+        names: list[str] = []
+        cur: Category | None = c
+        guard = 0
         while cur is not None and guard <= MAX_DEPTH + 1:
             names.append(cur.name)
             cur = by_id.get(cur.parent_id) if cur.parent_id else None

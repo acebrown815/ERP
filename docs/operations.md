@@ -92,7 +92,7 @@ To roll back, deploy the previous commit: `bash infra/deploy.sh <older sha>`. Mi
 
 ## Continuous deployment
 
-`.github/workflows/ci.yml` runs the API and web checks on every push and pull request. On a push to `main` where both pass, the `deploy` job connects to the server over SSH and runs `infra/deploy.sh <sha>`. Deploys run one at a time.
+`.github/workflows/ci.yml` runs the API checks, web checks and browser tests on every push and pull request. On a push to `main` where all of them pass, the `deploy` job connects to the server over SSH and runs `infra/deploy.sh <sha>`. Deploys run one at a time.
 
 One-time setup:
 
@@ -151,8 +151,8 @@ If a sheet can't be read (wrong URL or secret, old deployment, Google outage), t
 |---|---|
 | `GET /api/health` | Liveness: the API answers and reaches the database |
 | `GET /api/health/ready` | Readiness: also checks that the schema is at the latest migration (HTTP 503 if not). Docker's health check uses this |
-| **Settings → System Checks** | Ledger debits = credits, balance sheet balances, revenue splits match receipts, salary records match salary payments and employee expenses, audit log untampered, worker keeping up |
-| Nightly checks | The worker runs the same checks after 02:00. Any failure notifies administrators in the app (bell icon) and is logged as `check.result ok=false` |
+| **Settings → System Checks** | Ledger debits = credits, balance sheet balances, revenue splits match receipts, salary records match salary payments and employee expenses, audit log untampered, worker keeping up, a backup made here in the last 36 hours |
+| Nightly checks | The worker runs the same checks after 02:00 company time, then the nightly backup. A failure of either notifies administrators in the app (bell icon) and is logged (`check.result ok=false`, `worker.backup_failed`). Nothing is sent outside the app yet, so someone has to look: an administrator who doesn't sign in won't see it, and a server that is down can't report anything |
 | Logs | `docker compose -f infra/docker-compose.yml --env-file .env logs -f api worker`. With `ERP_LOG_JSON=true` (the default in compose) lines are JSON with a request id, so they can be shipped to any log service |
 
 External monitoring: point an uptime checker at `https://chonryong.com/api/health/ready` (expect 200), and alert on `check.result` warnings in the worker log.
@@ -231,7 +231,7 @@ Anything entered after the dump's time must be re-entered.
 ## Security notes
 
 - Secrets live only in `.env` (never committed). Rotate `POSTGRES_PASSWORD` by changing it in `.env` and in PostgreSQL (`ALTER USER erp PASSWORD '…'`), then restarting.
-- Passwords are hashed with Argon2id. Sign-in is locked for 15 minutes after 5 failures. Sessions are server-side, cookies are `HttpOnly`, `Secure` (prod) and `SameSite=Lax`, and changes need a CSRF token.
+- Passwords are hashed with Argon2id. Failed sign-ins are limited over a 15-minute window: 5 for one email from one address, and 20 from one address across all accounts. Someone guessing a user's password from elsewhere doesn't lock that user out. 50 failures on one account from any addresses, since its last successful sign-in, lock it for 15 minutes. Re-entering a password while signed in (changing it, restoring a backup) is limited to 5 failures too. The address counters are in memory, so a restart clears them; the account lock is in the database. Sessions are server-side, cookies are `HttpOnly`, `Secure` (prod) and `SameSite=Lax`, and changes need a CSRF token.
 - HTTPS and security headers come from Caddy (HSTS, `nosniff`, `X-Frame-Options: DENY`, referrer and permissions policies). The API and web app send them too, and the web app sets a same-origin Content-Security-Policy.
 - Every change to money, salary, categories and settings is in the audit log (Settings → Audit Log). The log is hash-chained and verified nightly.
 - Dependencies: `npm audit --omit=dev` (web) and `pip-audit` (API) were clean on 2026-10-29. Re-run them before each upgrade.

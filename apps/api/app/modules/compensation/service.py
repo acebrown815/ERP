@@ -97,7 +97,7 @@ async def assignment_counts(session: AsyncSession, on: date) -> dict[uuid.UUID, 
         )
         .group_by(CompAssignment.formula_id)
     )
-    return dict(rows.all())  # type: ignore[arg-type]
+    return dict(rows.all())
 
 
 async def _check_name(session: AsyncSession, name: str, exclude: uuid.UUID | None) -> None:

@@ -32,6 +32,7 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check app tests migrations
       - run: ruff format --check app tests migrations
+      - run: mypy app
       - run: pytest -q
       - name: Migrations match models
         env:
@@ -58,10 +59,55 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  e2e:
+    # The real screens in a browser, against a production build and its own database.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: erp
+          POSTGRES_PASSWORD: erp
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U erp" --health-interval 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: apps/web
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+      E2E_DATABASE_URL: postgresql+asyncpg://erp:erp@localhost:5432/erp_e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: pip install -e .
+        working-directory: apps/api
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          retention-days: 7
+
   deploy:
-    # Pushes to main that pass both test jobs. The server builds the images itself (infra/deploy.sh).
+    # Pushes to main that pass all the test jobs. The server builds the images itself (infra/deploy.sh).
     # Setup: docs/operations.md, "Continuous deployment".
-    needs: [api, web]
+    needs: [api, web, e2e]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production

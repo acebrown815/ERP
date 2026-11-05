@@ -11,7 +11,7 @@ from app.modules.auth.models import User
 
 async def _names(session: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
     rows = await session.execute(select(User.id, User.full_name).where(User.id.in_(ids)))
-    return dict(rows.all())  # type: ignore[arg-type]
+    return dict(rows.all())
 
 
 def setup() -> None:

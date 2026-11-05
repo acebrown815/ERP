@@ -22,7 +22,7 @@ async def _can_write(_: AsyncSession, user: CurrentUser, __: str) -> bool:
 
 async def _numbers(session: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
     rows = await session.execute(select(PaymentEntry.id, PaymentEntry.number).where(PaymentEntry.id.in_(ids)))
-    return dict(rows.all())  # type: ignore[arg-type]
+    return dict(rows.all())
 
 
 def setup() -> None:

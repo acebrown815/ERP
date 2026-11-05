@@ -179,7 +179,6 @@ async def list_accounts(
     accounts = await service.list_accounts(session, include_inactive=include_inactive)
     raw = await service.balances(session, date_to=as_of)
     by_id = {a.id: a for a in accounts}
-    totals: dict[uuid.UUID, Decimal] = {}
     base = await settings.base_currency(session)
     foreign = [a for a in accounts if not a.is_group and a.currency != base.code and a.id in raw]
     units = await service.unit_balances(session, account_ids=[a.id for a in foreign], date_to=as_of)
@@ -212,18 +211,18 @@ async def list_accounts(
             valued[key] = valued.get(key, Decimal(0)) + value
     out = []
     for a in service.tree_order(accounts):
-        n, rate, at_rate = own.get(a.id, (None, None, None))
+        held, unit_rate, held_value = own.get(a.id, (None, None, None))
         if a.is_group and valued.get(a.id, Decimal(0)) != totals.get(a.id, Decimal(0)):
-            at_rate = valued[a.id]
+            held_value = valued[a.id]
         out.append(
             AccountOut.model_validate(a).model_copy(
                 update={
                     "depth": a.path.count("/") - 2,
                     "balance": totals.get(a.id, Decimal(0)),
                     "has_postings": a.id in raw,
-                    "balance_in_currency": n,
-                    "rate": rate,
-                    "value_at_rate": at_rate,
+                    "balance_in_currency": held,
+                    "rate": unit_rate,
+                    "value_at_rate": held_value,
                 }
             )
         )
@@ -414,7 +413,7 @@ async def list_journal_entries(
     entries, total = await paginate(session, stmt, params)
     items = []
     for e in entries:
-        _, lines = await service.get_entry(session, e.id)
+        _entry, lines = await service.get_entry(session, e.id)
         items.append(await journal_out(session, e, lines))
     return Page(items=items, total=total, page=params.page, page_size=params.page_size)
 
@@ -436,8 +435,8 @@ async def preview_journal(
     prepared = await service.prepare_lines(session, [ln.to_service() for ln in body.lines])
     return JournalPreviewOut(
         lines=await _lines_out(session, prepared),
-        total_debit=sum(p.debit for p in prepared),
-        total_credit=sum(p.credit for p in prepared),
+        total_debit=sum((p.debit for p in prepared), Decimal(0)),
+        total_credit=sum((p.credit for p in prepared), Decimal(0)),
     )
 
 

@@ -443,7 +443,7 @@ async def sources(
     cache: SnapshotCache = Depends(get_cache),
 ) -> SourcesOut:
     snap = await cache.get(force=refresh)
-    return service.sources(snap, await _people(session), cache.ttl)
+    return service.sources(snap, await _people(session), int(cache.ttl))
 
 
 @router.post("/refresh", response_model=DataState)

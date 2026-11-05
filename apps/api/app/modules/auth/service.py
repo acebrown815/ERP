@@ -2,6 +2,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+import structlog
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,12 +17,21 @@ from app.core.errors import (
     ValidationFailed,
     field_error,
 )
+from app.core.ratelimit import FailureLimiter
 from app.core.security import hash_password, hash_token, needs_rehash, new_token, verify_password
 from app.modules.audit import api as audit
 from app.modules.auth.models import User, UserSession
 from app.modules.rbac import api as rbac
 
+log = structlog.get_logger()
+
 TOUCH_INTERVAL = timedelta(minutes=5)
+TOO_MANY_ATTEMPTS = "Too many failed attempts. Try again later."
+
+_window = get_settings().login_lockout_minutes * 60
+_pair_failures = FailureLimiter(_window)
+_ip_failures = FailureLimiter(_window)
+_confirm_failures = FailureLimiter(_window)
 
 
 @dataclass
@@ -44,6 +54,18 @@ def _check_password_policy(password: str, field: str = "password") -> None:
         )
 
 
+def confirm_password(user: User, password: str) -> bool:
+    """For a signed-in user re-entering their password, so a stolen session can't be used to guess it."""
+    key = str(user.id)
+    if _confirm_failures.count(key) >= get_settings().login_max_failures:
+        raise TooManyRequests(TOO_MANY_ATTEMPTS)
+    if verify_password(user.password_hash, password):
+        _confirm_failures.clear(key)
+        return True
+    _confirm_failures.hit(key)
+    return False
+
+
 async def get_user_by_email(session: AsyncSession, email: str) -> User | None:
     return (
         await session.execute(select(User).where(func.lower(User.email) == email.strip().lower()))
@@ -55,6 +77,16 @@ async def login(
 ) -> LoginResult:
     """Verify credentials and open a session. Commits failure counters before raising."""
     settings = get_settings()
+    address = ip or "unknown"
+    pair = f"{email.strip().lower()}|{address}"
+    if (
+        _pair_failures.count(pair) >= settings.login_max_failures
+        or _ip_failures.count(address) >= settings.login_ip_max_failures
+    ):
+        # Before any hashing or audit row, so a flood costs almost nothing and can't fill the audit log.
+        log.warning("auth.login_rate_limited", ip=address)
+        raise TooManyRequests(TOO_MANY_ATTEMPTS)
+
     user = await get_user_by_email(session, email)
     now = _now()
 
@@ -63,15 +95,18 @@ async def login(
             session, actor_id=user.id, action="auth.login_blocked", entity_type="user", entity_id=user.id
         )
         await session.commit()
-        raise TooManyRequests("Too many failed attempts. Try again later.")
+        raise TooManyRequests(TOO_MANY_ATTEMPTS)
 
     ok = verify_password(user.password_hash if user else None, password)
     if not ok or user is None or not user.is_active:
+        _pair_failures.hit(pair)
+        _ip_failures.hit(address)
         if user is not None:
             user.failed_login_count += 1
-            if user.failed_login_count >= settings.login_max_failures:
+            if user.failed_login_count >= settings.login_account_max_failures:
                 user.locked_until = now + timedelta(minutes=settings.login_lockout_minutes)
                 user.failed_login_count = 0
+                log.warning("auth.account_locked", user_id=str(user.id))
         await audit.record(
             session,
             actor_id=user.id if user else None,
@@ -85,6 +120,8 @@ async def login(
 
     if needs_rehash(user.password_hash or ""):
         user.password_hash = hash_password(password)
+    # The address's counter stays: signing in to one's own account must not reset guesses at other accounts.
+    _pair_failures.clear(pair)
     user.failed_login_count = 0
     user.locked_until = None
     user.last_login_at = now
@@ -142,7 +179,7 @@ async def change_password(
     session: AsyncSession, *, user_id: uuid.UUID, session_id: uuid.UUID, current: str, new: str
 ) -> None:
     user = await get_user(session, user_id)
-    if not verify_password(user.password_hash, current):
+    if not confirm_password(user, current):
         raise ValidationFailed(
             "Current password is wrong",
             errors=[field_error("current_password", "Current password is wrong", "wrong_password")],
@@ -164,7 +201,7 @@ async def get_user(session: AsyncSession, user_id: uuid.UUID) -> User:
     return user
 
 
-async def list_users(session: AsyncSession, *, q: str | None, is_active: bool | None):  # type: ignore[no-untyped-def]
+async def list_users(session: AsyncSession, *, q: str | None, is_active: bool | None):
     stmt = select(User).order_by(User.full_name)
     if q:
         like = f"%{q.strip()}%"

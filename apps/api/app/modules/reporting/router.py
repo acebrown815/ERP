@@ -409,7 +409,7 @@ async def hired_managers(
     activity = await tasks.activity(session, project_ids, date_from=date_from, date_to=date_to, today=today)
     managers = list({m for _, m in pairs if m})
     names = await employees.names(session, managers)
-    span = {"date_from": date_from, "date_to": date_to, "employee_ids": managers}
+    span: dict[str, Any] = {"date_from": date_from, "date_to": date_to, "employee_ids": managers}
     gross = await attribution.employee_totals(session, **span) if managers else {}
     spent = await salary.expense_totals(session, **span) if managers else {}
 

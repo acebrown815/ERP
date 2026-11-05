@@ -156,7 +156,7 @@ def list_stmt(
     department_id: uuid.UUID | None,
     only_user_id: uuid.UUID | None = None,
     hired: bool | None = None,
-) -> Select[tuple[Employee]]:
+) -> Select[Employee]:
     stmt = select(Employee).order_by(func.lower(Employee.full_name))
     if hired is not None:
         stmt = stmt.where(Employee.is_hired_manager.is_(hired))

@@ -4,7 +4,7 @@ import contextvars
 import uuid
 
 import structlog
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 request_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_id", default=None)
 client_ip_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("client_ip", default=None)
@@ -28,7 +28,7 @@ class RequestContextMiddleware:
         ip_token = client_ip_var.set(ip)
         structlog.contextvars.bind_contextvars(request_id=request_id)
 
-        async def send_with_id(message: dict) -> None:  # type: ignore[type-arg]
+        async def send_with_id(message: Message) -> None:
             if message["type"] == "http.response.start":
                 message.setdefault("headers", []).append((b"x-request-id", request_id.encode()))
             await send(message)

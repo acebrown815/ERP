@@ -44,7 +44,7 @@ async def names(session: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, 
 
 def list_stmt(
     *, kind: str | None, q: str | None, is_active: bool | None, only_ids: set[uuid.UUID] | None = None
-) -> Select[tuple[Party]]:
+) -> Select[Party]:
     stmt = select(Party).order_by(func.lower(Party.name))
     stmt = stmt.where(Party.kind == kind) if kind else stmt.where(Party.kind != "employee")
     if q:

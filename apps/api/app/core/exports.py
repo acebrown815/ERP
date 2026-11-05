@@ -23,7 +23,7 @@ def _attachment(filename: str, content: bytes, media_type: str) -> Response:
     )
 
 
-def _xlsx(title: str, header: Sequence[str], rows: list[Sequence[Any]]) -> bytes:
+def _xlsx(title: str, header: Sequence[str], rows: Sequence[Sequence[Any]]) -> bytes:
     from openpyxl import Workbook
     from openpyxl.styles import Font
     from openpyxl.utils import get_column_letter
@@ -35,7 +35,7 @@ def _xlsx(title: str, header: Sequence[str], rows: list[Sequence[Any]]) -> bytes
     for cell in ws[1]:
         cell.font = Font(bold=True)
     for row in rows:
-        out = []
+        out: list[Any] = []
         for v in row:
             if isinstance(v, Decimal):
                 out.append(float(v))  # spreadsheet cells are binary floats; the CSV keeps exact decimals
@@ -68,7 +68,7 @@ def _cell_text(v: Any) -> str:
     return str(v)
 
 
-def _pdf(title: str, header: Sequence[str], rows: list[Sequence[Any]]) -> bytes:
+def _pdf(title: str, header: Sequence[str], rows: Sequence[Sequence[Any]]) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import getSampleStyleSheet

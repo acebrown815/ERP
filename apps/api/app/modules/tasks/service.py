@@ -60,7 +60,7 @@ def list_stmt(
     top_level: bool = False,
     q: str | None = None,
     due_before: date | None = None,
-) -> Select[tuple[Task]]:
+) -> Select[Task]:
     stmt = select(Task).order_by(Task.status, Task.board_rank)
     if project_ids is not None:
         stmt = stmt.where(Task.project_id.in_(project_ids))
@@ -121,7 +121,7 @@ async def hours_logged(session: AsyncSession, task_ids: list[uuid.UUID]) -> dict
         .where(TimeEntry.task_id.in_(task_ids))
         .group_by(TimeEntry.task_id)
     )
-    return dict(rows.all())  # type: ignore[arg-type]
+    return dict(rows.all())
 
 
 async def hours_by_employee(session: AsyncSession, *, date_from: date, date_to: date) -> dict[uuid.UUID, Decimal]:
@@ -131,7 +131,7 @@ async def hours_by_employee(session: AsyncSession, *, date_from: date, date_to: 
         .where(TimeEntry.work_date.between(date_from, date_to))
         .group_by(TimeEntry.employee_id)
     )
-    return dict(rows.all())  # type: ignore[arg-type]
+    return dict(rows.all())
 
 
 async def subtask_counts(session: AsyncSession, task_ids: list[uuid.UUID]) -> dict[uuid.UUID, tuple[int, int]]:
@@ -143,7 +143,7 @@ async def subtask_counts(session: AsyncSession, task_ids: list[uuid.UUID]) -> di
         .where(Task.parent_task_id.in_(task_ids))
         .group_by(Task.parent_task_id)
     )
-    return {p: (n, d) for p, n, d in rows.all()}
+    return {p: (n, d) for p, n, d in rows.all() if p is not None}
 
 
 async def is_assignee(session: AsyncSession, task_id: uuid.UUID, employee_id: uuid.UUID) -> bool:
@@ -175,7 +175,8 @@ async def _validate(session: AsyncSession, task: Task) -> None:
             if parent.project_id != task.project_id:
                 errors.append(field_error("parent_task_id", "The parent task belongs to another project"))
             # Walk up: the new parent may not be this task or one of its subtasks.
-            seen, cur = set(), parent
+            seen: set[uuid.UUID] = set()
+            cur: Task | None = parent
             while cur is not None and task.id is not None:
                 if cur.id == task.id:
                     errors.append(field_error("parent_task_id", "A task can't be under its own subtask"))
@@ -629,7 +630,7 @@ async def progress(session: AsyncSession, project_ids: list[uuid.UUID], today: d
     return out
 
 
-def blocking_stmt(task_id: uuid.UUID) -> Select[tuple[Task]]:
+def blocking_stmt(task_id: uuid.UUID) -> Select[Task]:
     """Tasks that wait for `task_id`."""
     return (
         select(Task)

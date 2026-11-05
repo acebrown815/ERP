@@ -139,8 +139,8 @@ async def _out(
     out = ProjectOut.model_validate(project).model_copy(
         update={
             "members": members,
-            "manager_name": names.get(project.manager_employee_id),
-            "hire_name": names.get(project.hire_employee_id),
+            "manager_name": names.get(project.manager_employee_id) if project.manager_employee_id else None,
+            "hire_name": names.get(project.hire_employee_id) if project.hire_employee_id else None,
             "edit_mode": service.edit_mode(user, viewer, project),
             "lapsed": project.id in lapsed and not viewer.restricted,
         }
