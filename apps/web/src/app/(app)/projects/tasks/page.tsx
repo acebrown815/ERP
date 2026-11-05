@@ -3,7 +3,8 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 
 import { PageHeader } from "@/components/erp/page-header";
 import { TableSkeleton } from "@/components/erp/states";
@@ -21,9 +22,9 @@ import { cn, formatDate } from "@/lib/utils";
 
 const OPEN = ["backlog", "todo", "in_progress", "review"];
 
-/** Tasks across projects: mine by default, or everything I can see. */
-export default function TasksPage() {
-  const [who, setWho] = useState<"me" | "all">("me");
+/** Tasks across projects: everything I can see by default, or only mine (?who=me opens it that way). */
+function TasksList() {
+  const [who, setWho] = useState<"me" | "all">(useSearchParams().get("who") === "me" ? "me" : "all");
   const [status, setStatus] = useState("open");
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<Task | null>(null);
@@ -45,8 +46,8 @@ export default function TasksPage() {
     <>
       <PageHeader
         title="Tasks"
-        description="Your tasks across projects, soonest due first. Click one for details, time and comments."
-        actions={can("tasks.manage") && <Button onClick={() => setCreating(true)}><Plus /> New task</Button>}
+        description="Tasks across your projects, soonest due first. Click one for details, time and comments."
+        actions={(can("tasks.manage") || can("projects.create_own")) && <Button onClick={() => setCreating(true)}><Plus /> New task</Button>}
       />
       <Card>
         <div className="flex flex-col gap-2 border-b p-3 sm:flex-row">
@@ -86,5 +87,13 @@ export default function TasksPage() {
       {open && <TaskPanel key={open.id} projectId={open.project_id} taskId={open.id} onClose={() => setOpen(null)} />}
       {creating && <TaskPanel onClose={() => setCreating(false)} />}
     </>
+  );
+}
+
+export default function TasksPage() {
+  return (
+    <Suspense>
+      <TasksList />
+    </Suspense>
   );
 }

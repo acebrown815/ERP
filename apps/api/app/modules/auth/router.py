@@ -9,7 +9,7 @@ from app.core.config import get_settings
 from app.core.db import get_session
 from app.core.pagination import Page, PageParams, page_params, paginate
 from app.modules.auth import service
-from app.modules.auth.deps import CurrentUser, current_user, require
+from app.modules.auth.deps import CurrentUser, current_user, require, user_grants
 from app.modules.auth.models import User
 from app.modules.auth.schemas import (
     ChangePasswordIn,
@@ -45,15 +45,22 @@ def _clear_session_cookies(response: Response) -> None:
 
 
 async def _me(session: AsyncSession, user_id: uuid.UUID, csrf: str) -> MeOut:
+    from app.modules.employees import api as employees  # imported here: employees depends on this module
+
     user = await service.get_user(session, user_id)
+    own = await employees.for_user(session, user.id)
     roles = (await rbac.roles_by_user(session, [user.id]))[user.id]
-    grants = await rbac.effective_grants(session, user.id)
+    grants = await user_grants(session, user.id)
     return MeOut(
         id=user.id,
         email=user.email,
         full_name=user.full_name,
         roles=[RoleRef.model_validate(r) for r in roles],
         permissions={k: v.value for k, v in sorted(grants.items())},
+        restricted_access=bool(own and await employees.is_restricted(session, own)),
+        # Staff can set a hire on any project they manage; employees only if they're full-time.
+        can_select_hire="projects.manage" in grants
+        or ("projects.create_own" in grants and bool(own and await employees.is_full_time(session, own))),
         csrf_token=csrf,
     )
 

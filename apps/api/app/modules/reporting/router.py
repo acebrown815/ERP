@@ -1,7 +1,7 @@
 """Cross-module reports. Reads other modules' facades only; owns no tables."""
 
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 
@@ -338,7 +338,162 @@ async def party_payments(
     )
 
 
+# ---- hired managers --------------------------------------------------------------------------------
+
+HIRE_STALE_DAYS = 7  # no activity for this long gets flagged on the report
+
+
+class HiredManagerRow(BaseModel):
+    hire_id: uuid.UUID
+    hire_name: str
+    hire_status: str
+    manager_id: uuid.UUID | None  # empty for a hire who has no project or payment yet
+    manager_name: str | None
+    projects: int = 0
+    tasks_created: int = 0
+    tasks_completed: int = 0
+    tasks_open: int = 0
+    tasks_overdue: int = 0
+    last_activity: datetime | None = None
+    stale: bool = False
+    paid: Decimal = ZERO
+    manager_gross_revenue: Decimal = ZERO
+    manager_net_revenue: Decimal = ZERO
+
+
+class HiredManagersOut(BaseModel):
+    date_from: date
+    date_to: date
+    base_currency: str
+    stale_after_days: int
+    rows: list[HiredManagerRow]
+
+
+@router.get("/reports/hired-managers", response_model=HiredManagersOut)
+async def hired_managers(
+    date_from: Annotated[date, Query(alias="from")],
+    date_to: Annotated[date, Query(alias="to")],
+    format: Format = "json",
+    user: CurrentUser = Depends(require("hired_managers.read")),
+    session: AsyncSession = Depends(get_session),
+) -> Any:
+    """One row per hire and project manager. Each figure counts only that manager's projects, so a manager
+    never sees what a shared hire does or earns for anyone else."""
+    own = await employees.for_user(session, user.id)
+    if user.restricted:
+        raise Forbidden("This report isn't available with restricted access")
+    everyone = user.scope_for("hired_managers.read") == Scope.ALL
+    if not everyone and own is None:
+        raise NotFound("Your user is not linked to an employee record")
+
+    today = await settings.today(session)
+    hires = {h.id: h for h in await employees.all_hires(session)}
+    by_party = {h.party_id: h for h in hires.values()}
+    paid = await payments.hire_paid_totals(session, party_ids=list(by_party), date_from=date_from, date_to=date_to)
+    on_projects: dict[tuple[uuid.UUID, uuid.UUID | None], list[projects.Project]] = {}
+    for p in await projects.with_hires(session):
+        if p.hire_employee_id in hires:
+            on_projects.setdefault((p.hire_employee_id, p.manager_employee_id), []).append(p)
+
+    pairs = {*on_projects, *((by_party[party].id, manager) for party, manager in paid)}
+    if everyone:
+        pairs |= {(h, None) for h in hires if not any(pair[0] == h for pair in pairs)}
+    else:
+        pairs = {pair for pair in pairs if own is not None and pair[1] == own.id}
+
+    project_ids = [p.id for rows in on_projects.values() for p in rows]
+    activity = await tasks.activity(session, project_ids, date_from=date_from, date_to=date_to, today=today)
+    managers = list({m for _, m in pairs if m})
+    names = await employees.names(session, managers)
+    span = {"date_from": date_from, "date_to": date_to, "employee_ids": managers}
+    gross = await attribution.employee_totals(session, **span) if managers else {}
+    spent = await salary.expense_totals(session, **span) if managers else {}
+
+    rows: list[HiredManagerRow] = []
+    for hire_id, manager_id in pairs:
+        hire = hires[hire_id]
+        mine = on_projects.get((hire_id, manager_id), [])
+        row = HiredManagerRow(
+            hire_id=hire_id,
+            hire_name=hire.full_name,
+            hire_status=hire.status,
+            manager_id=manager_id,
+            manager_name=names.get(manager_id) if manager_id else None,
+            projects=len(mine),
+            paid=paid.get((hire.party_id, manager_id), ZERO) if manager_id else ZERO,
+            manager_gross_revenue=(gross.get(manager_id) or ZERO) if manager_id else ZERO,
+            manager_net_revenue=((gross.get(manager_id) or ZERO) - (spent.get(manager_id) or ZERO))
+            if manager_id
+            else ZERO,
+            last_activity=max((p.updated_at for p in mine), default=None),
+        )
+        for p in mine:
+            a = activity.get(p.id)
+            if a is None:
+                continue
+            row.tasks_created += a.created
+            row.tasks_completed += a.completed
+            row.tasks_open += a.open
+            row.tasks_overdue += a.overdue
+            if a.last_activity and (row.last_activity is None or a.last_activity > row.last_activity):
+                row.last_activity = a.last_activity
+        row.stale = bool(mine) and (
+            row.last_activity is None or (today - row.last_activity.date()).days >= HIRE_STALE_DAYS
+        )
+        rows.append(row)
+    rows.sort(key=lambda r: (r.hire_name.lower(), (r.manager_name or "").lower()))
+
+    if format != "json":
+        return export_response(
+            format,
+            f"hired-managers_{date_from}_{date_to}",
+            [
+                "hire",
+                "project manager",
+                "projects",
+                "tasks created",
+                "tasks completed",
+                "tasks open",
+                "tasks overdue",
+                "last activity",
+                "paid",
+                "manager gross revenue",
+                "manager net revenue",
+            ],
+            (
+                [
+                    r.hire_name,
+                    r.manager_name or "",
+                    r.projects,
+                    r.tasks_created,
+                    r.tasks_completed,
+                    r.tasks_open,
+                    r.tasks_overdue,
+                    r.last_activity.date() if r.last_activity else "",
+                    r.paid,
+                    r.manager_gross_revenue,
+                    r.manager_net_revenue,
+                ]
+                for r in rows
+            ),
+            title=f"Hired managers, {date_from} to {date_to}",
+        )
+    return HiredManagersOut(
+        date_from=date_from,
+        date_to=date_to,
+        base_currency=(await settings.base_currency(session)).code,
+        stale_after_days=HIRE_STALE_DAYS,
+        rows=rows,
+    )
+
+
 # ---- monthly summary (salary periods) --------------------------------------------------------------
+
+
+class HirePay(BaseModel):
+    hire_id: uuid.UUID
+    hire_name: str
+    amount: Decimal
 
 
 class MonthRow(BaseModel):
@@ -355,6 +510,8 @@ class MonthRow(BaseModel):
     margin_pct: Decimal | None = None  # profit / income
     fees: Decimal = ZERO  # payment fees the company paid (included in expenses)
     shared_expenses: Decimal = ZERO  # one employee: their share of split expenses (included in expenses)
+    hired_manager_pay: Decimal = ZERO  # selected employees: what their hires were paid (included in expenses)
+    hire_payments: list[HirePay] = []  # the same, per hire
     fx_gain_loss: Decimal = ZERO  # realized (included in income); negative = loss
     cash_in: Decimal = ZERO
     cash_out: Decimal = ZERO
@@ -416,6 +573,7 @@ async def _selection_months(
     bal = await salary.balances(session, None if unassigned else employee_ids, until=today)
     company = {r.period_id: r for r in await _company_months(session, cols, today)} if unassigned else {}
     chosen = set(employee_ids)
+    hires_by_party = {h.party_id: h for h in await employees.all_hires(session)} if chosen else {}
     rows = []
     for p in cols:
         lines = [line for b in bal.values() for line in b.lines if line.period.id == p.id]
@@ -433,6 +591,16 @@ async def _selection_months(
             expenses += c.expenses - sum((line.expenses for line in lines), ZERO) - sum(everyone_shared.values(), ZERO)
             fees, fx = c.fees, c.fx_gain_loss
         profit = income - expenses - earned
+        hire_pay: dict[uuid.UUID, Decimal] = {}
+        for (party, employee), amount in (
+            await payments.hire_paid_totals(
+                session, party_ids=list(hires_by_party), date_from=p.start_date, date_to=p.end_date
+            )
+        ).items():
+            if employee in chosen:
+                hire = hires_by_party[party]
+                hire_pay[hire.id] = hire_pay.get(hire.id, ZERO) + amount
+        names = {h.id: h.full_name for h in hires_by_party.values()}
         rows.append(
             MonthRow(
                 period_id=p.id,
@@ -449,6 +617,11 @@ async def _selection_months(
                 fees=fees,
                 fx_gain_loss=fx,
                 shared_expenses=shared,
+                hired_manager_pay=sum(hire_pay.values(), ZERO),
+                hire_payments=sorted(
+                    (HirePay(hire_id=h, hire_name=names[h], amount=a) for h, a in hire_pay.items()),
+                    key=lambda x: x.hire_name.lower(),
+                ),
                 in_progress=p.in_progress,
             )
         )
@@ -564,6 +737,7 @@ async def monthly_summary(
             salary_calculated=sum((r.salary_calculated for r in rows), ZERO),
             fees=sum((r.fees for r in rows), ZERO),
             shared_expenses=sum((r.shared_expenses for r in rows), ZERO),
+            hired_manager_pay=sum((r.hired_manager_pay for r in rows), ZERO),
             fx_gain_loss=sum((r.fx_gain_loss for r in rows), ZERO),
             cash_in=sum((r.cash_in for r in rows), ZERO),
             cash_out=sum((r.cash_out for r in rows), ZERO),
@@ -587,6 +761,7 @@ async def monthly_summary(
                 "margin %",
                 "salary calculated",
                 "fees",
+                "hired manager pay",
                 "cash in",
                 "cash out",
                 "closing cash",
@@ -603,6 +778,7 @@ async def monthly_summary(
                     r.margin_pct,
                     r.salary_calculated,
                     r.fees,
+                    r.hired_manager_pay,
                     r.cash_in,
                     r.cash_out,
                     r.closing_cash,

@@ -55,6 +55,7 @@ POSTING_RULES = {
     "P1": "Supplier / operating expense",
     "P2": "Employee salary",
     "P3": "Owner drawings",
+    "P4": "Hired manager payment",
     "T1": "Transfer between our accounts",
 }
 RULE_DIRECTION = {"R": "receive", "P": "pay", "T": "internal_transfer"}
@@ -122,6 +123,7 @@ GROUPS: dict[str, CategoryGroup] = {
                     True,
                 ),
                 SystemValue("employee_salary", "Employee Salary", {"direction": "pay", "posting_rule": "P2"}, True),
+                SystemValue("hire_payment", "Hired Manager Payment", {"direction": "pay", "posting_rule": "P4"}, True),
                 SystemValue("owner_drawings", "Owner Drawings", {"direction": "pay", "posting_rule": "P3"}, True),
                 SystemValue(
                     "internal_transfer",

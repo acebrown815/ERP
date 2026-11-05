@@ -340,6 +340,11 @@ def _assignment_snapshot(a: CompAssignment) -> dict[str, Any]:
     }
 
 
+async def has_assignments(session: AsyncSession, employee_id: uuid.UUID) -> bool:
+    stmt = select(CompAssignment.id).where(CompAssignment.employee_id == employee_id).limit(1)
+    return (await session.execute(stmt)).first() is not None
+
+
 async def create_assignment(
     session: AsyncSession,
     *,
@@ -353,6 +358,7 @@ async def create_assignment(
 ) -> CompAssignment:
     """`end_previous` closes an open-ended assignment the day before, which is what "switch formula" means."""
     await employees.get(session, employee_id)
+    await employees.assert_not_hire(session, employee_id)
     f = await get_formula(session, formula_id)
     if not f.is_active:
         raise ValidationFailed("Inactive formula", errors=[field_error("formula_id", "This formula is inactive")])

@@ -10,6 +10,7 @@ import { num, PeriodChart, SERIES } from "@/components/charts/charts";
 import { PageHeader } from "@/components/erp/page-header";
 import { shortLabel } from "@/components/reports/shared";
 import { StatusBadge } from "@/components/payments/entry-view";
+import { HireOverview } from "@/components/hired/hire-overview";
 import { Button } from "@/components/ui/button";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, Skeleton } from "@/components/ui/misc";
@@ -334,6 +335,8 @@ function EmployeeOverview({ showRevenue, tiles }: { showRevenue: boolean; tiles:
   // statements are newest first; the chart reads oldest to newest.
   const months = (s?.statements ?? []).slice(0, 12).reverse();
   const prev = s?.statements.find((x) => x.period_id !== cur?.period_id);
+  // Everything the employee carries: tagged expenses, which lower their salary, plus their share of split ones.
+  const allExpenses = (m: { expenses: string; shared_expenses?: string }) => sum([m.expenses, m.shared_expenses ?? "0"]);
   return (
     <>
       <TopTiles>
@@ -341,8 +344,12 @@ function EmployeeOverview({ showRevenue, tiles }: { showRevenue: boolean; tiles:
           <>
             <Kpi label="My revenue this month" value={s ? (cur?.gross_revenue ?? "0") : undefined} base={base}
               hint={[span ?? "Credited from customer payments", prev && `${prev.period_label}: ${formatAmount(prev.gross_revenue)}`].filter(Boolean).join(" · ")} />
-            <Kpi label="My expenses this month" value={s ? (cur?.expenses ?? "0") : undefined} base={base}
-              hint={[`Net ${formatAmount(cur?.revenue ?? "0")}`, prev && `${prev.period_label}: ${formatAmount(prev.expenses)}`].filter(Boolean).join(" · ")} />
+            <Kpi label="My expenses this month" value={s ? (cur ? allExpenses(cur) : "0") : undefined} base={base}
+              hint={[
+                cur && sign(cur.shared_expenses ?? "0") ? `${formatAmount(cur.shared_expenses ?? "0")} shared, not in salary` : undefined,
+                `Net for salary ${formatAmount(cur?.revenue ?? "0")}`,
+                prev && `${prev.period_label}: ${formatAmount(allExpenses(prev))}`,
+              ].filter(Boolean).join(" · ")} />
           </>
         )}
         <Kpi label="My salary this month" value={s ? (cur?.calculated ?? "0") : undefined} base={base}
@@ -351,7 +358,7 @@ function EmployeeOverview({ showRevenue, tiles }: { showRevenue: boolean; tiles:
           hint={s ? `${formatAmount(s.paid_total)} paid of ${formatAmount(s.calculated_total)} earned in total` : undefined} />
         {tiles}
       </TopTiles>
-      {months.some((m) => sign(m.gross_revenue) || sign(m.expenses) || sign(m.calculated)) && (
+      {months.some((m) => sign(m.gross_revenue) || sign(allExpenses(m)) || sign(m.calculated)) && (
         <Card className="mb-6">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Last 12 months</CardTitle>
@@ -362,7 +369,7 @@ function EmployeeOverview({ showRevenue, tiles }: { showRevenue: boolean; tiles:
               label={showRevenue ? "My revenue, expenses and salary over the last 12 months" : "My salary over the last 12 months"}
               height={220}
               unit={base}
-              data={months.map((m) => ({ label: shortLabel(m.period_label), revenue: num(m.gross_revenue), expenses: num(m.expenses), salary: num(m.calculated), paid: num(m.paid) }))}
+              data={months.map((m) => ({ label: shortLabel(m.period_label), revenue: num(m.gross_revenue), expenses: num(allExpenses(m)), salary: num(m.calculated), paid: num(m.paid) }))}
               bars={showRevenue
                 ? [{ key: "revenue", label: "Revenue", color: SERIES[0] }, { key: "expenses", label: "Expenses", color: SERIES[1] }]
                 : [{ key: "paid", label: "Paid", color: SERIES[0] }]}
@@ -410,8 +417,51 @@ function EmployeeOverview({ showRevenue, tiles }: { showRevenue: boolean; tiles:
   );
 }
 
+/** The tasks assigned to me, at a glance. Each tile opens the Tasks page on my open tasks. */
+function MyTaskTiles() {
+  const today = iso(new Date());
+  const end = addDays(today, 7);
+  const open = useQuery({
+    queryKey: ["tasks", "my-open-counts"],
+    queryFn: () => {
+      const qs = new URLSearchParams([["assignee", "me"], ["page_size", "500"], ...["backlog", "todo", "in_progress", "review"].map((x) => ["status", x])]);
+      return api.get<Page<Task>>(`/tasks?${qs}`);
+    },
+  });
+  const done = useQuery({
+    queryKey: ["tasks", "my-done-count"],
+    queryFn: () => api.get<Page<Task>>("/tasks", { assignee: "me", status: "done", page_size: 1 }),
+  });
+  const due = open.data?.items.filter((t) => t.due_date) ?? [];
+  const overdue = open.data ? due.filter((t) => t.due_date! < today).length : undefined;
+  const soon = open.data ? due.filter((t) => t.due_date! >= today && t.due_date! <= end).length : undefined;
+  const total = open.data && done.data ? open.data.total + done.data.total : undefined;
+  const tile = (label: string, value: number | undefined, hint?: string, tone?: "bad") => (
+    <Link href="/projects/tasks?who=me" className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <Card className="h-full transition-colors hover:bg-muted/50">
+        <CardContent className="py-4">
+          <p className="text-sm text-muted-foreground">{label}</p>
+          {value === undefined ? <Skeleton className="mt-1 h-8 w-16" /> : (
+            <p className={cn("tabular mt-1 text-2xl font-semibold", tone === "bad" && value > 0 && "text-destructive")}>{value}</p>
+          )}
+          {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
+        </CardContent>
+      </Card>
+    </Link>
+  );
+  return (
+    <>
+      {tile("My open tasks", open.data?.total, total === undefined ? undefined : `${total} assigned to me in total`)}
+      {tile("My overdue tasks", overdue, "Past their due date", "bad")}
+      {tile("Due in the next 7 days", soon)}
+      {tile("My completed tasks", done.data?.total)}
+    </>
+  );
+}
+
 /** My next seven days: tasks due (and overdue) plus calendar events. */
 function MyWeek() {
+  const canSeeTasks = "projects.read" in useMe().permissions;
   const today = iso(new Date());
   const end = addDays(today, 7);
   const tasks = useQuery({
@@ -420,6 +470,7 @@ function MyWeek() {
       const qs = new URLSearchParams([["assignee", "me"], ["page_size", "100"], ...["backlog", "todo", "in_progress", "review"].map((x) => ["status", x])]);
       return (await api.get<Page<Task>>(`/tasks?${qs}`)).items;
     },
+    enabled: canSeeTasks,
   });
   const feed = useQuery({ queryKey: ["calendar", "my-week", today], queryFn: () => api.get<CalendarFeed>("/calendar/feed", { from: today, to: end, view: "me" }) });
   const due = (tasks.data ?? []).filter((t) => t.due_date && t.due_date <= end).sort((a, b) => (a.due_date! < b.due_date! ? -1 : 1));
@@ -433,7 +484,7 @@ function MyWeek() {
       <CardContent className="grid gap-6 sm:grid-cols-2">
         <div>
           <p className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground"><ListChecks className="size-3.5" /> My tasks due</p>
-          {!tasks.data ? <Skeleton className="h-16 w-full" /> : due.length === 0 ? <p className="text-sm text-muted-foreground">Nothing due.</p> : (
+          {tasks.isLoading ? <Skeleton className="h-16 w-full" /> : due.length === 0 ? <p className="text-sm text-muted-foreground">Nothing due.</p> : (
             <ul className="flex flex-col gap-1 text-sm">
               {due.slice(0, 8).map((t) => (
                 <li key={t.id} className="flex gap-2">
@@ -469,33 +520,50 @@ export default function DashboardPage() {
   const mySalary = "salary.read" in me.permissions;
   const bidding = "bidding.read" in me.permissions;
   const biddingTiles = bidding ? <BiddingTiles /> : null;
+  // Tasks first, then bidding: an employee's own numbers, under their money.
+  const myTiles = "projects.read" in me.permissions || biddingTiles ? (
+    <>
+      {"projects.read" in me.permissions && <MyTaskTiles />}
+      {biddingTiles}
+    </>
+  ) : null;
+  const isHire = me.restricted_access;
   const quickLinks = [
-    { href: "/accounting/payment-entries/new", label: "Record a payment", show: "payments.create" in me.permissions },
+    { href: "/accounting/payment-entries/new", label: "Record a payment", show: "payments.create" in me.permissions && !isHire },
     { href: "/parties/customers", label: "Customers", show: "parties.read" in me.permissions },
     { href: "/me", label: "My salary", show: "salary.read" in me.permissions && !finance },
     { href: "/employees/salary", label: "Salary board", show: "salary.read" in me.permissions && finance },
-    { href: "/employees", label: "Employees", show: "employees.read" in me.permissions },
-    { href: "/projects/tasks", label: "My tasks", show: "projects.read" in me.permissions },
+    { href: "/employees", label: "Employees", show: "employees.read" in me.permissions && !isHire },
+    { href: "/projects/tasks?who=me", label: "My tasks", show: "projects.read" in me.permissions },
     { href: "/calendar/me", label: "My calendar", show: true },
     { href: "/projects", label: "Projects", show: "projects.read" in me.permissions },
     { href: "/settings/imports", label: "Import existing data", show: "imports.manage" in me.permissions },
-    { href: "/settings/company", label: "Company settings", show: true },
+    { href: "/settings/company", label: "Company settings", show: !isHire },
   ].filter((l) => l.show);
 
   return (
     <>
       <PageHeader
         title={`Welcome, ${firstName}`}
-        description={finance ? "This month at a glance, from the posted ledger." : mySalary ? "Your month at a glance: your revenue, expenses, salary and payments." : undefined}
+        description={isHire ? "Your projects, tasks and payments." : finance ? "This month at a glance, from the posted ledger." : mySalary ? "Your month at a glance: your revenue, expenses, salary and payments." : undefined}
       />
-      {finance ? (
+      {!isHire && me.roles.some((r) => r.key === "hired_manager") && (
+        <Card className="mb-6">
+          <CardContent className="py-4 text-sm text-muted-foreground">
+            Your sign-in isn&apos;t connected to a hired manager record yet, so there are no projects to show. Ask an administrator to link it on your employee record.
+          </CardContent>
+        </Card>
+      )}
+      {isHire ? (
+        <HireOverview />
+      ) : finance ? (
         <FinanceOverview tiles={biddingTiles} />
       ) : mySalary ? (
-        <EmployeeOverview showRevenue={"revenue.read" in me.permissions} tiles={biddingTiles} />
+        <EmployeeOverview showRevenue={"revenue.read" in me.permissions} tiles={myTiles} />
       ) : (
-        biddingTiles && <TopTiles>{biddingTiles}</TopTiles>
+        myTiles && <TopTiles>{myTiles}</TopTiles>
       )}
-      {bidding && <BiddingDashboardSection />}
+      {bidding && !isHire && <BiddingDashboardSection />}
       <div className="grid gap-6 lg:grid-cols-3">
         <MyWeek />
         <Card>

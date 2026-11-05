@@ -106,6 +106,10 @@ async def _one(session: AsyncSession, category: Category) -> CategoryOut:
     return (await _out(session, [category]))[0]
 
 
+# What a hired manager's screens need to label things. Finance groups and their ledger settings stay hidden.
+HIRE_GROUPS = {"project_type", "task_category", "event_type", "payment_method", "payment_purpose"}
+
+
 @router.get("/groups", response_model=list[GroupOut])
 async def list_groups(user: CurrentUser = Depends(current_user)) -> list[GroupOut]:
     return [
@@ -121,6 +125,7 @@ async def list_groups(user: CurrentUser = Depends(current_user)) -> list[GroupOu
             system_locked=list(g.system_locked),
         )
         for g in GROUPS.values()
+        if not user.restricted or g.key in HIRE_GROUPS
     ]
 
 
@@ -129,10 +134,13 @@ async def list_categories(
     group: Annotated[str | None, Query(alias="group")] = None,
     include_inactive: bool = False,
     q: Annotated[str | None, Query(max_length=100)] = None,
-    _: CurrentUser = Depends(current_user),
+    user: CurrentUser = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[CategoryOut]:
     rows = await service.list_categories(session, group_key=group, include_inactive=include_inactive, q=q)
+    if user.restricted:
+        rows = [r for r in rows if r.group_key in HIRE_GROUPS]
+        return [c.model_copy(update={"config": {}}) for c in await _out(session, rows)]
     return await _out(session, rows)
 
 

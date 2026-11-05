@@ -24,9 +24,12 @@ function Option({ checked, onToggle, children }: { checked: boolean; onToggle: (
   );
 }
 
-/** Whole company (nothing ticked), or any mix of employees and the part nobody carries ("Not assigned"). */
+/**
+ * Whole company (nothing ticked), or any mix of employees and the part nobody carries ("Not assigned").
+ * Hired managers aren't listed: they have no figures of their own, and their pay shows under their manager.
+ */
 export function OwnerSelect({ value, onChange }: { value: OwnerSelection; onChange: (v: OwnerSelection) => void }) {
-  const { data: employees = [] } = useEmployees();
+  const employees = (useEmployees().data ?? []).filter((e) => !e.is_hired_manager);
   const names = employees.filter((e) => value.employeeIds.includes(e.id)).map((e) => e.full_name);
   const count = value.employeeIds.length + (value.unassigned ? 1 : 0);
   const label = count === 0 ? "Whole company" : count === 1 ? (value.unassigned ? "Not assigned" : names[0] ?? "1 employee") : `${count} selected`;

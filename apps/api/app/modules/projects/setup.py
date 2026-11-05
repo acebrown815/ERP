@@ -12,6 +12,8 @@ from app.modules.rbac.api import Scope
 
 
 async def _can_read(session: AsyncSession, user: CurrentUser, entity_id: str) -> bool:
+    if user.restricted:  # Project files can hold contracts and prices; a hire's files live on tasks.
+        return False
     scope = user.scope_for("projects.read")
     if scope == Scope.ALL:
         return True
@@ -19,6 +21,8 @@ async def _can_read(session: AsyncSession, user: CurrentUser, entity_id: str) ->
 
 
 async def _can_write(session: AsyncSession, user: CurrentUser, entity_id: str) -> bool:
+    if user.restricted:
+        return False
     return user.can("projects.manage", Scope.ALL) or (
         user.can("projects.manage") and entity_id in {str(i) for i in await visible_project_ids(session, user)}
     )

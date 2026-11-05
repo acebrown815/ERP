@@ -17,7 +17,7 @@ import { Input, Select, Textarea } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/misc";
 import { api, ApiError, newIdempotencyKey } from "@/lib/api";
 import { decimals, formatAmount, isDecimal, sign, subtract } from "@/lib/money";
-import { currencyPrecision, useCompany, useCurrencies, useEmployees, usePaymentAccounts } from "@/lib/queries";
+import { currencyPrecision, useCompany, useCurrencies, useEmployees, usePaymentAccounts, useProjects } from "@/lib/queries";
 import { useCan } from "@/lib/session";
 import type { EmployeeSalary, PaymentEntry, PaymentPreview, SplitRow } from "@/lib/types";
 import { cn, formatDate } from "@/lib/utils";
@@ -210,7 +210,21 @@ export function PaymentEntryEditor({ entry, salary }: { entry?: PaymentEntry; sa
   const requiresSplit = !!purpose?.config?.requires_attribution;
   // An expense can be tagged to one employee (lowers their salary) or split between several (reports only).
   const splitPicked = splits.some((s) => s.employee_id);
-  const expenseSplit = form.direction === "pay" && purpose?.system_key !== "employee_salary" && !form.employee_id;
+  const isHirePayment = purpose?.system_key === "hire_payment";
+  const expenseSplit = form.direction === "pay" && purpose?.system_key !== "employee_salary" && !isHirePayment && !form.employee_id;
+  const projects = useProjects();
+  const selectedProject = projects.data?.find((p) => p.id === form.project_id);
+  const hirePurpose = purposes.data?.find((c) => c.system_key === "hire_payment");
+  // A hire's payment follows from its project: paid to the project's hire, charged to its manager.
+  useEffect(() => {
+    if (!isHirePayment || !projects.data || !employees.data) return;
+    const party = employees.data.find((e) => e.id === selectedProject?.hire_employee_id)?.party_id ?? null;
+    setForm((f) =>
+      f.party_id === party && !f.employee_id && !f.category.category_id && !f.counter_account_id
+        ? f
+        : { ...f, party_id: party, employee_id: null, category: { category_id: null, other_text: "" }, counter_account_id: null },
+    );
+  }, [isHirePayment, selectedProject?.hire_employee_id, projects.data, employees.data]);
   const isTransfer = form.direction === "internal_transfer";
   const crossCurrency = isTransfer && dst && ours && dst.currency !== ours.currency;
 
@@ -373,7 +387,22 @@ export function PaymentEntryEditor({ entry, salary }: { entry?: PaymentEntry; sa
               />
             </div>
 
-            {!isTransfer && (
+            {isHirePayment && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField id="project" label="Project" required className="sm:col-span-2" error={errors.project_id}
+                  hint={projects.data && !projects.data.some((p) => p.hire_employee_id) ? "No project has a hire yet. Select one on the project first." : undefined}>
+                  <ProjectPicker id="project" onlyWithHire value={form.project_id} onChange={(v) => set("project_id", v)} invalid={!!errors.project_id} />
+                </FormField>
+                <FormField id="party" label="Paid to" error={errors.party_id} hint="The project's hire.">
+                  <Input id="party" readOnly value={selectedProject?.hire_name ?? ""} placeholder="Choose a project first" />
+                </FormField>
+                <FormField id="charged_to" label="Charged to" hint="Comes off this person's revenue before their salary is calculated.">
+                  <Input id="charged_to" readOnly value={selectedProject?.manager_name ?? ""} placeholder="Choose a project first" />
+                </FormField>
+              </div>
+            )}
+
+            {!isTransfer && !isHirePayment && (
               <FormField
                 id="party"
                 label={form.direction === "receive" ? "Received from" : "Paid to"}
@@ -528,7 +557,7 @@ export function PaymentEntryEditor({ entry, salary }: { entry?: PaymentEntry; sa
           </CardContent>
         </Card>
 
-        {!isTransfer && (
+        {!isTransfer && !isHirePayment && (
           <Card>
             <CardHeader>
               <CardTitle>Classification</CardTitle>
@@ -557,12 +586,18 @@ export function PaymentEntryEditor({ entry, salary }: { entry?: PaymentEntry; sa
                   invalid={!!errors.counter_account_id}
                 />
               </FormField>
-              <FormField id="project" label="Project" error={errors.project_id}>
+              <FormField id="project" label="Project" error={errors.project_id}
+                hint={form.direction === "pay" && selectedProject?.hire_name && hirePurpose ? (
+                  <>
+                    This project&apos;s hire is {selectedProject.hire_name}.{" "}
+                    <button type="button" className="text-primary hover:underline" onClick={() => set("purpose", { category_id: hirePurpose.id, other_text: "" })}>Pay them instead?</button>
+                  </>
+                ) : undefined}>
                 <ProjectPicker id="project" value={form.project_id} onChange={(v) => set("project_id", v)} />
               </FormField>
               {form.direction === "pay" && purpose?.system_key !== "employee_salary" && !splitPicked && (
                 <FormField id="employee" label="Employee (optional tag)" hint="Lowers this employee's salary. To share the cost between several people for reports, leave empty and use the expense split below.">
-                  <EmployeePicker id="employee" value={form.employee_id} onChange={(v) => set("employee_id", v)} />
+                  <EmployeePicker id="employee" excludeHires value={form.employee_id} onChange={(v) => set("employee_id", v)} />
                 </FormField>
               )}
             </CardContent>
@@ -679,6 +714,7 @@ function EmployeePartyPicker({ value, onChange }: { value: string | null; onChan
   return (
     <EmployeePicker
       id="party"
+      excludeHires
       value={selected?.id ?? null}
       onChange={(employeeId) => onChange(employees.data?.find((e) => e.id === employeeId)?.party_id ?? null)}
     />

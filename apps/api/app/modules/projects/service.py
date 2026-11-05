@@ -1,4 +1,5 @@
 import uuid
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
@@ -20,6 +21,7 @@ EDITABLE = (
     "name",
     "customer_party_id",
     "manager_employee_id",
+    "hire_employee_id",
     "project_type_category_id",
     "project_type_other_text",
     "description",
@@ -32,6 +34,22 @@ EDITABLE = (
     "currency",
     "status",
 )
+
+# What can be edited on a project, by whom. Staff (FULL) edit everything. A manager who only has
+# projects.create_own (OWN) edits the work, never the money or the team. Restricted access can't edit projects at all.
+FULL, OWN = "full", "own"
+WORK_FIELDS = (
+    "name",
+    "description",
+    "project_type_category_id",
+    "project_type_other_text",
+    "start_date",
+    "deadline",
+    "priority",
+    "status",
+    "completion_override",
+)
+STAFF_ONLY_ON_CREATE = ("customer_party_id", "contract_value", "budget", "currency")
 
 
 def _snapshot(p: Project) -> dict[str, Any]:
@@ -54,22 +72,25 @@ async def members(session: AsyncSession, project_id: uuid.UUID) -> list[ProjectM
 
 
 async def team_ids(session: AsyncSession, project_ids: set[uuid.UUID]) -> set[uuid.UUID]:
-    """Employees on these projects: members plus managers."""
+    """Employees on these projects: members, managers and hires."""
     if not project_ids:
         return set()
     member = select(ProjectMember.employee_id).where(ProjectMember.project_id.in_(project_ids))
     manager = select(Project.manager_employee_id).where(
         Project.id.in_(project_ids), Project.manager_employee_id.is_not(None)
     )
-    return set((await session.execute(member.union(manager))).scalars())
+    hire = select(Project.hire_employee_id).where(Project.id.in_(project_ids), Project.hire_employee_id.is_not(None))
+    return set((await session.execute(member.union(manager, hire))).scalars())
 
 
 async def visible_project_ids(session: AsyncSession, user: CurrentUser) -> set[uuid.UUID]:
-    """Projects the user manages or is a member of (the 'project' permission scope)."""
+    """Projects the user manages, is the hire on, or is a member of (the 'project' permission scope)."""
     employee = await employees.for_user(session, user.id)
     if employee is None:
         return set()
-    managed = select(Project.id).where(Project.manager_employee_id == employee.id)
+    managed = select(Project.id).where(
+        or_(Project.manager_employee_id == employee.id, Project.hire_employee_id == employee.id)
+    )
     member = select(ProjectMember.project_id).where(ProjectMember.employee_id == employee.id)
     return set((await session.execute(managed.union(member))).scalars())
 
@@ -92,9 +113,19 @@ async def ensure_visible(session: AsyncSession, user: CurrentUser, permission: s
 
 
 def list_stmt(
-    *, q: str | None, status: str | None, customer_party_id: uuid.UUID | None, only_ids: set[uuid.UUID] | None
+    *,
+    q: str | None,
+    status: str | None,
+    customer_party_id: uuid.UUID | None,
+    only_ids: set[uuid.UUID] | None,
+    hire_employee_id: uuid.UUID | None = None,
+    manager_employee_id: uuid.UUID | None = None,
 ) -> Select[tuple[Project]]:
     stmt = select(Project).order_by(Project.number.desc())
+    if hire_employee_id:
+        stmt = stmt.where(Project.hire_employee_id == hire_employee_id)
+    if manager_employee_id:
+        stmt = stmt.where(Project.manager_employee_id == manager_employee_id)
     if q:
         like = f"%{q.strip()}%"
         stmt = stmt.where(or_(Project.name.ilike(like), Project.number.ilike(like)))
@@ -107,7 +138,7 @@ def list_stmt(
     return stmt
 
 
-async def _validate(session: AsyncSession, data: dict[str, Any]) -> None:
+async def _validate(session: AsyncSession, data: dict[str, Any], previous_hire: uuid.UUID | None = None) -> None:
     await categories.validate_choice(
         session,
         group_key="project_type",
@@ -128,6 +159,13 @@ async def _validate(session: AsyncSession, data: dict[str, Any]) -> None:
             raise ValidationFailed(
                 "Unknown manager", errors=[field_error("manager_employee_id", "Not found")]
             ) from None
+        # The project manager is charged for the hire's pay, so they have to be someone who earns revenue.
+        await employees.assert_not_hire(session, data["manager_employee_id"], "manager_employee_id")
+    hire_id = data.get("hire_employee_id")
+    if hire_id and hire_id != previous_hire and hire_id not in {h.id for h in await employees.active_hires(session)}:
+        raise ValidationFailed(
+            "Unknown hire", errors=[field_error("hire_employee_id", "Choose an active hired manager")]
+        )
     data["currency"] = (data.get("currency") or (await settings.base_currency(session)).code).upper()
     await settings.get_currency(session, data["currency"])
     if data.get("start_date") and data.get("deadline") and data["deadline"] < data["start_date"]:
@@ -163,7 +201,7 @@ async def update(
         raise PreconditionFailed()
     before = _snapshot(project)
     merged = {**before, **changes}
-    await _validate(session, merged)
+    await _validate(session, merged, previous_hire=before["hire_employee_id"])
     for k in EDITABLE:
         setattr(project, k, merged[k])
     project.version += 1
@@ -190,6 +228,7 @@ async def set_members(
     ids = [r["employee_id"] for r in rows]
     if len(ids) != len(set(ids)):
         raise ValidationFailed("Duplicate member", errors=[field_error("members", "Each employee can appear once")])
+    hires = await employees.hire_ids(session, ids)
     for i, eid in enumerate(ids):
         try:
             await employees.get(session, eid)
@@ -197,6 +236,11 @@ async def set_members(
             raise ValidationFailed(
                 "Unknown employee", errors=[field_error(f"members.{i}.employee_id", "Not found")]
             ) from None
+        if eid in hires:
+            raise ValidationFailed(
+                "A hired manager can't be a team member",
+                errors=[field_error(f"members.{i}.employee_id", "Use the project's Hire field instead")],
+            )
     total = sum((r.get("default_allocation_pct") or Decimal(0) for r in rows), Decimal(0))
     if total > 100:
         raise ValidationFailed(
@@ -217,7 +261,20 @@ async def set_members(
         before={"members": before},
         after={"members": [{"employee_id": r["employee_id"], "pct": r.get("default_allocation_pct")} for r in rows]},
     )
+    await _assert_hire_rules(session, await get(session, project_id))
     return await members(session, project_id)
+
+
+async def _assert_hire_rules(session: AsyncSession, project: Project) -> None:
+    """The project manager is charged for the hire's pay, so they have to earn revenue from this project."""
+    if project.hire_employee_id is None:
+        return
+    split = {m.employee_id: m.default_allocation_pct for m in await members(session, project.id)}
+    if project.manager_employee_id is None or not split.get(project.manager_employee_id):
+        raise ValidationFailed(
+            "This project can't have a hire yet",
+            errors=[field_error("hire_employee_id", "The project manager must be on the team with a revenue split")],
+        )
 
 
 async def default_split(session: AsyncSession, project_id: uuid.UUID) -> list[tuple[uuid.UUID, Decimal]]:
@@ -229,15 +286,118 @@ async def default_split(session: AsyncSession, project_id: uuid.UUID) -> list[tu
     ]
 
 
-async def can_manage(session: AsyncSession, user: CurrentUser, project: Project | None) -> None:
+@dataclass(frozen=True)
+class Viewer:
+    """Who is signed in, as far as projects care. Being restricted is about the person, whatever role they hold."""
+
+    employee_id: uuid.UUID | None
+    restricted: bool
+    is_hire: bool = False
+    full_time: bool = False
+
+
+async def viewer_for(session: AsyncSession, user: CurrentUser) -> Viewer:
+    own = await employees.for_user(session, user.id)
+    if own is None:
+        return Viewer(None, False)
+    return Viewer(
+        own.id,
+        await employees.is_restricted(session, own),
+        own.is_hired_manager,
+        await employees.is_full_time(session, own),
+    )
+
+
+def edit_mode(user: CurrentUser, viewer: Viewer, project: Project | None) -> str | None:
+    """How this user may edit this project (None = not at all). No project = creating a new one."""
+    me = viewer.employee_id
+    if viewer.restricted:  # They see the projects they're connected to and manage the tasks, nothing more.
+        return None
+    manages = project is not None and me is not None and project.manager_employee_id == me
     scope = user.scope_for("projects.manage")
-    if scope is None:
+    if scope == Scope.ALL or (scope is not None and (project is None or manages)):
+        return FULL
+    if user.can("projects.create_own") and me is not None and (project is None or manages):
+        return OWN
+    return None
+
+
+async def can_manage(session: AsyncSession, user: CurrentUser, project: Project | None) -> None:
+    if user.scope_for("projects.manage") is None and not user.can("projects.create_own"):
         raise Forbidden("Requires permission projects.manage")
-    if scope == Scope.ALL or project is None:
-        return
-    employee = await employees.for_user(session, user.id)
-    if employee is None or project.manager_employee_id != employee.id:
+    if edit_mode(user, await viewer_for(session, user), project) is None:
         raise Forbidden("Only the project manager can change this project")
+
+
+async def managers_of_hire(session: AsyncSession, hire_id: uuid.UUID) -> set[uuid.UUID]:
+    """The project managers a hire already works for."""
+    rows = await session.execute(
+        select(Project.manager_employee_id).where(
+            Project.hire_employee_id == hire_id, Project.manager_employee_id.is_not(None)
+        )
+    )
+    return set(rows.scalars())
+
+
+def _check_may_select_hire(viewer: Viewer, hire_id: uuid.UUID | None) -> None:
+    if hire_id and not viewer.full_time:
+        raise ValidationFailed(
+            "Only full-time employees can select a hire",
+            errors=[field_error("hire_employee_id", "Only full-time employees can select a hire")],
+        )
+
+
+async def create_by(
+    session: AsyncSession, *, user: CurrentUser, data: dict[str, Any], rows: list[dict[str, Any]] | None
+) -> Project:
+    """Create a project, applying what the signed-in user is allowed to set."""
+    viewer = await viewer_for(session, user)
+    mode = edit_mode(user, viewer, None)
+    if mode is None:
+        raise Forbidden(
+            "Restricted access can't create projects" if viewer.restricted else "Requires permission projects.manage"
+        )
+    manager = data.get("manager_employee_id")
+    if mode == OWN:
+        _check_may_select_hire(viewer, data.get("hire_employee_id"))
+        manager = viewer.employee_id
+        data = {**data, "manager_employee_id": manager}
+    if mode != FULL:
+        data = {**data, **dict.fromkeys(STAFF_ONLY_ON_CREATE)}
+        rows = [{"employee_id": manager, "role": None, "default_allocation_pct": Decimal(100)}]
+    elif rows is None and data.get("hire_employee_id") and manager:
+        rows = [{"employee_id": manager, "role": None, "default_allocation_pct": Decimal(100)}]
+    project = await create(session, actor_id=user.id, data=data)
+    if rows is not None:
+        await set_members(session, actor_id=user.id, project_id=project.id, rows=rows)
+    await _assert_hire_rules(session, project)
+    return project
+
+
+async def update_by(
+    session: AsyncSession,
+    *,
+    user: CurrentUser,
+    project: Project,
+    version: int,
+    changes: dict[str, Any],
+    rows: list[dict[str, Any]] | None,
+) -> Project:
+    """Update a project and, in one step, its team. The hire rules are checked on the end result."""
+    viewer = await viewer_for(session, user)
+    mode = edit_mode(user, viewer, project)
+    if mode is None:
+        raise Forbidden("Only the project manager can change this project")
+    if mode == OWN:
+        if set(changes) - {*WORK_FIELDS, "hire_employee_id"} or rows is not None:
+            raise Forbidden("Only staff can change the money fields, the team or the project manager")
+        if changes.get("hire_employee_id") != project.hire_employee_id:
+            _check_may_select_hire(viewer, changes.get("hire_employee_id"))
+    updated = await update(session, actor_id=user.id, project_id=project.id, version=version, changes=changes)
+    if rows is not None:
+        await set_members(session, actor_id=user.id, project_id=project.id, rows=rows)
+    await _assert_hire_rules(session, updated)
+    return updated
 
 
 async def find_by_name(session: AsyncSession, name: str) -> Project | None:
@@ -254,6 +414,19 @@ async def can_manage_id(session: AsyncSession, user: CurrentUser, project_id: uu
 
 async def is_team_member(session: AsyncSession, user: CurrentUser, project_id: uuid.UUID) -> bool:
     return project_id in await visible_project_ids(session, user)
+
+
+async def with_hires(session: AsyncSession) -> list[Project]:
+    return list((await session.execute(select(Project).where(Project.hire_employee_id.is_not(None)))).scalars())
+
+
+async def is_on_any_project(session: AsyncSession, employee_id: uuid.UUID) -> bool:
+    """Whether this employee is any project's manager, hire or team member."""
+    on_project = select(Project.id).where(
+        or_(Project.manager_employee_id == employee_id, Project.hire_employee_id == employee_id)
+    )
+    member = select(ProjectMember.project_id).where(ProjectMember.employee_id == employee_id)
+    return (await session.execute(on_project.union(member).limit(1))).first() is not None
 
 
 # ---- milestones ------------------------------------------------------------------------------------

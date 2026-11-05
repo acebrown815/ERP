@@ -12,6 +12,7 @@ from app.modules.projects.service import (
     find_by_name,
     get,
     get_milestone,
+    is_on_any_project,
     is_team_member,
     list_stmt,
     members,
@@ -20,6 +21,7 @@ from app.modules.projects.service import (
     names,
     team_ids,
     visible_project_ids,
+    with_hires,
 )
 
 __all__ = [
@@ -36,6 +38,7 @@ __all__ = [
     "find_by_name",
     "get",
     "get_milestone",
+    "is_on_any_project",
     "is_team_member",
     "list_stmt",
     "members",
@@ -44,4 +47,5 @@ __all__ = [
     "names",
     "team_ids",
     "visible_project_ids",
+    "with_hires",
 ]

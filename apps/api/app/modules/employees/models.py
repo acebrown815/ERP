@@ -40,6 +40,9 @@ class Employee(UUIDPk, Authored, Base):
     end_date: Mapped[date | None]
     timezone: Mapped[str | None] = mapped_column(String(64))
     notes: Mapped[str | None] = mapped_column(Text)
+    # Someone an employee hires to help run a project: they sign in and work on projects, but earn no revenue
+    # and get no salary. They are paid through project expenses (docs/hired-managers-plan.md).
+    is_hired_manager: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
     version: Mapped[int] = mapped_column(default=1)
 
 

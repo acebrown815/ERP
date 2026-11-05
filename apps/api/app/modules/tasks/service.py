@@ -545,6 +545,54 @@ class Progress:
     overdue: int
 
 
+@dataclass
+class Activity:
+    created: int = 0
+    completed: int = 0
+    open: int = 0
+    overdue: int = 0
+    last_activity: datetime | None = None
+
+
+async def activity(
+    session: AsyncSession, project_ids: list[uuid.UUID], *, date_from: date, date_to: date, today: date
+) -> dict[uuid.UUID, Activity]:
+    """Per project: tasks created and completed in the date range, tasks open and overdue now, and when anyone
+    last touched a task, comment or time entry."""
+    out: dict[uuid.UUID, Activity] = {}
+    if not project_ids:
+        return out
+
+    def touched(pid: uuid.UUID, when: datetime | None) -> None:
+        a = out.setdefault(pid, Activity())
+        if when and (a.last_activity is None or when > a.last_activity):
+            a.last_activity = when
+
+    rows = await session.execute(
+        select(Task.project_id, Task.status, Task.due_date, Task.created_at, Task.completed_at, Task.updated_at).where(
+            Task.project_id.in_(project_ids)
+        )
+    )
+    for pid, status, due, created, completed, updated in rows.all():
+        touched(pid, updated)
+        a = out[pid]
+        a.created += date_from <= created.date() <= date_to
+        a.completed += bool(completed and date_from <= completed.date() <= date_to)
+        if status != "done":
+            a.open += 1
+            a.overdue += bool(due and due < today)
+    for table in (TaskComment, TimeEntry):
+        latest = await session.execute(
+            select(Task.project_id, func.max(table.created_at))
+            .join(Task, Task.id == table.task_id)
+            .where(Task.project_id.in_(project_ids))
+            .group_by(Task.project_id)
+        )
+        for pid, when in latest.all():
+            touched(pid, when)
+    return out
+
+
 async def progress(session: AsyncSession, project_ids: list[uuid.UUID], today: date) -> dict[uuid.UUID, Progress]:
     out: dict[uuid.UUID, Progress] = {}
     if not project_ids:

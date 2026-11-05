@@ -2,8 +2,11 @@
 
 from app.modules.employees.models import Employee
 from app.modules.employees.service import (
+    active_hires,
     active_ids,
     active_in,
+    all_hires,
+    assert_not_hire,
     bidding_profiles,
     by_ids,
     by_party,
@@ -13,6 +16,9 @@ from app.modules.employees.service import (
     find_by_email,
     for_user,
     get,
+    hire_ids,
+    is_full_time,
+    is_restricted,
     names,
     normalize_profile_name,
     profile_names,
@@ -21,8 +27,11 @@ from app.modules.employees.service import (
 
 __all__ = [
     "Employee",
+    "active_hires",
     "active_ids",
     "active_in",
+    "all_hires",
+    "assert_not_hire",
     "bidding_profiles",
     "by_ids",
     "by_party",
@@ -32,6 +41,9 @@ __all__ = [
     "find_by_email",
     "for_user",
     "get",
+    "hire_ids",
+    "is_full_time",
+    "is_restricted",
     "names",
     "normalize_profile_name",
     "profile_names",

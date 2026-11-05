@@ -26,12 +26,16 @@ class Project(UUIDPk, Authored, Base):
             "completion_override IS NULL OR (completion_override >= 0 AND completion_override <= 100)",
             name="completion_range",
         ),
+        CheckConstraint("hire_employee_id IS NULL OR hire_employee_id <> manager_employee_id", name="hire_not_manager"),
+        Index("ix_projects_hire", "hire_employee_id"),
     )
 
     number: Mapped[str] = mapped_column(String(20), unique=True)
     name: Mapped[str] = mapped_column(String(200))
     customer_party_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("parties.id", ondelete="RESTRICT"))
     manager_employee_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("employees.id", ondelete="RESTRICT"))
+    # The hired manager working on this project; their pay is charged to the project manager.
+    hire_employee_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("employees.id", ondelete="RESTRICT"))
     project_type_category_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("categories.id", ondelete="RESTRICT"))
     project_type_other_text: Mapped[str | None] = mapped_column(String(120))
     description: Mapped[str | None] = mapped_column(Text)

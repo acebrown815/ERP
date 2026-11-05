@@ -80,7 +80,8 @@ export default function EmployeePage() {
   const e = employee.data;
   if (!e) return <TableSkeleton />;
   // Pay and revenue are private: your own record, or company-wide access (the API enforces this too).
-  const sees = (permission: string) => me.permissions[permission] === "all" || (permission in me.permissions && e.user_id === me.id);
+  // Hired managers have no salary or revenue, so those sections don't apply to them.
+  const sees = (permission: string) => !e.is_hired_manager && (me.permissions[permission] === "all" || (permission in me.permissions && e.user_id === me.id));
   const dept = departments.data?.find((d) => d.id === e.department_id)?.name;
 
   return (
@@ -104,6 +105,7 @@ export default function EmployeePage() {
             <dl className="grid grid-cols-[8rem_1fr] gap-y-2 text-sm">
               <dt className="text-muted-foreground">Status</dt>
               <dd><Badge variant={STATUS_VARIANT[e.status as keyof typeof STATUS_VARIANT] ?? "default"}>{e.status.replace("_", " ")}</Badge></dd>
+              {e.is_hired_manager && (<><dt className="text-muted-foreground">Type</dt><dd><Badge variant="outline">Hired manager</Badge></dd></>)}
               <dt className="text-muted-foreground">Email</dt><dd>{e.email ?? "—"}</dd>
               <dt className="text-muted-foreground">Phone</dt><dd>{e.phone ?? "—"}</dd>
               <dt className="text-muted-foreground">Started</dt><dd>{formatDate(e.start_date)}</dd>

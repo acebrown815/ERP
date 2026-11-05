@@ -676,6 +676,29 @@ async def get_entry(session: AsyncSession, entry_id: uuid.UUID) -> tuple[Journal
 # ---- seed ------------------------------------------------------------------------------------------
 
 
+async def _seed_hire_fees(session: AsyncSession) -> int:
+    """Add the hired manager fees account to a chart created before it existed, on the next free 57xx code."""
+    accounts = await list_accounts(session)
+    if any(a.system_key == "hire_fees" for a in accounts):
+        return 0
+    taken = {a.code for a in accounts}
+    code = next(c for c in map(str, range(5700, 5800)) if c not in taken)
+    parent = next((a for a in accounts if a.code == "5000"), None)
+    await create_account(
+        session,
+        actor_id=None,
+        code=code,
+        name="Hired Manager Fees",
+        parent_id=parent.id if parent else None,
+        account_type="expense",
+        is_group=False,
+        currency=None,
+        root_type="expense",
+        system_key="hire_fees",
+    )
+    return 1
+
+
 async def seed(session: AsyncSession) -> int:
     """Create the default chart if no accounts exist, and default accounts on built-in categories."""
     created = 0
@@ -696,6 +719,7 @@ async def seed(session: AsyncSession) -> int:
                 system_key=spec.system_key,
             )
             created += 1
+    created += await _seed_hire_fees(session)
     codes = {a.code: a.id for a in await list_accounts(session)}
     for group, key, config_key, code in CATEGORY_DEFAULTS:
         if code in codes:

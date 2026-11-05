@@ -102,6 +102,7 @@ export function AllocationEditor({
         {rows.map((r, i) => (
           <div key={r.key} className="grid grid-cols-[1fr_7rem_auto] items-center gap-2 sm:grid-cols-[1fr_8rem_8rem_auto]">
             <EmployeePicker
+              excludeHires
               id={`split-employee-${i}`}
               value={r.employee_id}
               disabled={disabled}

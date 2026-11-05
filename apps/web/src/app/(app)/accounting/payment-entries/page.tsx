@@ -20,7 +20,7 @@ import { Card } from "@/components/ui/misc";
 import { api } from "@/lib/api";
 import { formatAmount, formatShort, sign } from "@/lib/money";
 import { currencyPrecision, useAccounts, useCompany, useCurrencies, useEmployees, useParty, usePaymentAccounts } from "@/lib/queries";
-import { useCan } from "@/lib/session";
+import { useCan, useMe } from "@/lib/session";
 import type { Account, Page, PaymentEntry } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 
@@ -67,6 +67,8 @@ function PaymentEntriesList() {
   // Without payments.create or reports.financial (an employee): only the payments about themselves,
   // read-only, so the filters that need company lookups are hidden.
   const ownOnly = !can("payments.create") && !can("reports.financial");
+  // A hired manager only ever sees completed payments to them, so those filters and columns don't apply.
+  const isHire = useMe().restricted_access;
   const employees = useEmployees(!ownOnly);
   const accounts = usePaymentAccounts(true, !ownOnly);
   const ledger = useAccounts(!ownOnly);
@@ -91,7 +93,14 @@ function PaymentEntriesList() {
   const ledgerIds = filters.account_ids ? filters.account_ids.split(",") : [];
   const ledgerOpts = useMemo(() => ledgerOptions(ledger.data ?? [], ledgerIds), [ledger.data, filters.account_ids]); // eslint-disable-line react-hooks/exhaustive-deps
   const booked = ledgerIds.length === 1 ? ledger.data?.find((a) => a.id === ledgerIds[0]) : undefined;
-  const party = useParty(filters.party_id || null).data?.name;
+  // An employee can narrow their payments to one of their hires. Everything else about them comes from their own list.
+  const myHires = useQuery({
+    queryKey: ["payment-entries", "my-hires"],
+    queryFn: () => api.get<{ party_id: string; full_name: string }[]>("/payment-entries/my-hires"),
+    enabled: ownOnly && !isHire,
+  });
+  const companyParty = useParty(ownOnly ? null : filters.party_id || null).data?.name;
+  const party = ownOnly ? myHires.data?.find((h) => h.party_id === filters.party_id)?.full_name : companyParty;
 
   const columns = useMemo<ColumnDef<PaymentEntry, unknown>[]>(
     () => [
@@ -124,7 +133,7 @@ function PaymentEntriesList() {
           </div>
         ),
       },
-      {
+      ...(isHire ? [] : [{
         id: "employees",
         header: "Employees",
         enableSorting: false,
@@ -147,10 +156,10 @@ function PaymentEntriesList() {
           }
           return <span className="text-sm text-muted-foreground">{e.employee_name ?? "—"}</span>;
         },
-      },
+      } satisfies ColumnDef<PaymentEntry, unknown>]),
       {
         accessorKey: "description",
-        header: "Description",
+        header: isHire ? "Reference" : "Description",
         enableSorting: false,
         cell: ({ row }) => (
           <span className="line-clamp-1 max-w-64 text-muted-foreground">{row.original.description ?? row.original.reference_no ?? ""}</span>
@@ -162,7 +171,7 @@ function PaymentEntriesList() {
         accessorFn: (e) => Number(e.my_share ?? e.base_amount ?? e.amount),
         cell: ({ row }) => {
           const e = row.original;
-          const out = e.direction === "pay";
+          const out = e.direction === "pay" && !isHire;
           if (e.my_share != null) {
             // Employee view of a shared payment: their share (base currency), with the whole amount below.
             return (
@@ -185,16 +194,18 @@ function PaymentEntriesList() {
       },
       { accessorKey: "status", header: "Status", cell: ({ row }) => <StatusBadge status={row.original.status} /> },
     ],
-    [currencies.data, base],
+    [currencies.data, base, isHire],
   );
 
 
   return (
     <>
       <PageHeader
-        title="Payment entries"
+        title={isHire ? "Payments" : "Payment entries"}
         description={
-          ownOnly
+          isHire
+            ? "What you've been paid, by project."
+            : ownOnly
             ? "Payments about you: revenue credited to you, salary paid to you, and expenses tagged to or shared with you."
             : "Every payment received, paid or moved between our accounts. Submitting a payment posts it to the ledger."
         }
@@ -217,21 +228,25 @@ function PaymentEntriesList() {
           <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
             <div className="relative md:w-64">
               <Search className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground" aria-hidden />
-              <Input aria-label="Search" placeholder="Number, reference, description" className="pl-8" value={filters.q}
+              <Input aria-label="Search" placeholder={isHire ? "Number or reference" : "Number, reference, description"} className="pl-8" value={filters.q}
                 onChange={(e) => setFilter("q", e.target.value)} />
             </div>
-            <Select aria-label="Status" className="md:w-36" value={filters.status} onChange={(e) => setFilter("status", e.target.value)}>
-              <option value="">All statuses</option>
-              <option value="submitted">Submitted</option>
-              <option value="draft">Draft</option>
-              <option value="cancelled">Cancelled</option>
-            </Select>
-            <Select aria-label="Direction" className="md:w-40" value={filters.direction} onChange={(e) => setFilter("direction", e.target.value)}>
-              <option value="">All directions</option>
-              <option value="receive">Received</option>
-              <option value="pay">Paid</option>
-              <option value="internal_transfer">Transfers</option>
-            </Select>
+            {!isHire && (
+              <>
+                <Select aria-label="Status" className="md:w-36" value={filters.status} onChange={(e) => setFilter("status", e.target.value)}>
+                  <option value="">All statuses</option>
+                  <option value="submitted">Submitted</option>
+                  <option value="draft">Draft</option>
+                  <option value="cancelled">Cancelled</option>
+                </Select>
+                <Select aria-label="Direction" className="md:w-40" value={filters.direction} onChange={(e) => setFilter("direction", e.target.value)}>
+                  <option value="">All directions</option>
+                  <option value="receive">Received</option>
+                  <option value="pay">Paid</option>
+                  <option value="internal_transfer">Transfers</option>
+                </Select>
+              </>
+            )}
             <div className="flex items-center gap-2">
               <Input aria-label="From date" type="date" className="md:w-40" value={filters.from} onChange={(e) => setFilter("from", e.target.value)} />
               <span className="text-muted-foreground">–</span>
@@ -239,6 +254,12 @@ function PaymentEntriesList() {
             </div>
           </div>
           <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
+            {ownOnly && (myHires.data?.length ?? 0) > 0 && (
+              <Select aria-label="Hired manager" className="md:w-64" value={filters.party_id} onChange={(e) => setFilter("party_id", e.target.value)}>
+                <option value="">Any</option>
+                {myHires.data?.map((h) => <option key={h.party_id} value={h.party_id}>{h.full_name}</option>)}
+              </Select>
+            )}
             {!ownOnly && (
             <>
             <div className="md:w-64">
@@ -278,12 +299,12 @@ function PaymentEntriesList() {
               {booked && <> booked to {booked.code} {booked.name}{booked.is_group ? " (and the accounts under it)" : ""}</>}
               {ledgerIds.length > 1 && <> booked to any of {ledgerIds.length} ledger accounts</>}
             </span>
-            <span className="text-success">Received <span className="tabular">{formatAmount(totals.data.received)}</span></span>
-            <span>Paid <span className="tabular">{formatAmount(totals.data.paid)}</span></span>
+            {!isHire && <span className="text-success">Received <span className="tabular">{formatAmount(totals.data.received)}</span></span>}
+            <span>{isHire ? "Paid to you" : "Paid"} <span className="tabular">{formatAmount(totals.data.paid)}</span></span>
             {sign(totals.data.transferred) !== 0 && <span className="text-muted-foreground">Transfers <span className="tabular">{formatAmount(totals.data.transferred)}</span></span>}
             <span className="text-xs text-muted-foreground">
-              {totals.data.base_currency}, submitted only
-              {ownOnly ? " · shared payments count with your share" : who ? " · includes revenue split to them, salary paid to them and expenses tagged to or shared with them" : ""}
+              {totals.data.base_currency}{!isHire && ", submitted only"}
+              {isHire ? "" : ownOnly ? " · shared payments count with your share" : who ? " · includes revenue split to them, salary paid to them and expenses tagged to or shared with them" : ""}
             </span>
           </div>
         )}

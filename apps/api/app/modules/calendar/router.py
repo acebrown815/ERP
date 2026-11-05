@@ -204,6 +204,9 @@ async def feed(
 ) -> FeedOut:
     """Events (repeats expanded, minus cancelled occurrences) plus tasks, milestones and project deadlines,
     derived at query time so a changed task date shows up immediately (docs/architecture.md, Section 11.3)."""
+    # The team and company views show colleagues' leave; restricted access is their own calendar only.
+    if view != "me" and user.restricted:
+        raise Forbidden("Only your own calendar is available with restricted access")
     v = await service.viewer(session, user)
     items = await service.feed(
         session, v, date_from=date_from, date_to=date_to, view=view, department_id=department_id, project_id=project_id

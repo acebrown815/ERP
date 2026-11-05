@@ -58,6 +58,30 @@ How to set up and run the ERP day to day. For servers, backups and monitoring se
 | Administrator | Everything, including reopening closed periods, formulas, salary cycle, roles |
 | Finance Manager | Payments, accounting, reports, salary board and closing salary periods, all projects' financials |
 | Project Manager | Their projects: tasks, milestones, team calendar, approving their team's leave; everyone's bidding numbers |
-| Employee | Own salary (read-only), own tasks (move, log time), comments, own calendar and leave requests; own bidding numbers and the shared job list |
+| Employee | Own salary (read-only), own tasks (move, log time), comments, own calendar and leave requests; own bidding numbers and the shared job list; creating and running their own projects, and selecting a hire |
+| Hired Manager, or any Contractor or Freelancer | Restricted access, whatever role their sign-in holds: only the projects they're connected to, managing those projects' tasks, and their own payments. They can't create or edit projects or milestones. No money fields, salary, revenue, bidding or other employees' details |
+| Supervisor | Read-only view of every project and hired manager, including what hires are paid and managers' revenue, plus the audit log |
 
 Permissions can be adjusted per role (Settings → Roles & Permissions); scopes are *own*, *project* or *all*.
+
+## 6. Hired managers
+
+An employee can hire someone to help run a project. The employee stays the project manager and earns the revenue, and what the hire is paid comes off the employee's revenue before their salary is calculated.
+
+**Set up a hire**
+
+1. **Settings → Users**: create their sign-in. Choose the **Hired Manager** role for clarity. The role grants nothing by itself, and their access is the same whichever role it has. An administrator can't be a hire.
+2. **Employees → Directory → New employee**: tick **Hired manager**, and choose their sign-in under **Sign-in account**. Without that link they can't see anything, and the Directory shows **Not linked**. The tick can't be changed later once they have projects or payments, and someone with a salary formula, payments or projects can't become a hire.
+3. **Select them on a project**: a full-time employee creating the project picks them under **Hire**. Staff can also set **Hire** when editing a project, as long as the project manager is on the team with a revenue split. The hire sees a project only once they're selected on it, and loses it if they're removed.
+
+**Pay a hire**
+
+1. **Payment Entries → New payment**, choose **Pay**, then the purpose **Hired Manager Payment**.
+2. Choose the **Project**. **Paid to** and **Charged to** fill in by themselves.
+3. Fill in the account, method and amount, then submit. Work for two employees means two payments, one per project.
+
+Only a project's current hire can be paid on it, so pay what's owed before replacing them. Cancelling the payment restores the employee's revenue.
+
+**What restricted access can reach:** only their dashboard, connected projects (read-only) and those projects' tasks and task files, their own payments, and their own calendar. Everything else is refused, including screens opened by typing the address and anything added to the system later. Once marked **Left**, they lose access completely. This applies to anyone with the **Hired manager** tick, and to every **Contractor** and **Freelancer**. A Contractor on a salary formula is still paid as normal, but can't see their salary pages. Changing someone's employment type changes their access at once, and an administrator can't have one of these types.
+
+**Monitor** on **Employees → Hired Managers**: management sees every hire, and each employee sees only their own projects. A hire with no activity for 7 days is flagged.

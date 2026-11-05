@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import type { CalendarFeed, FeedItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useMe } from "@/lib/session";
 
 import { EventDialog, type EventDefaults } from "./event-dialog";
 import { addDays, addMonths, between, colorClass, fmtDay, fmtTime, iso, localDay, monthGrid, monthStart, weekStart } from "./utils";
@@ -67,6 +68,7 @@ export function CalendarView({
   title?: React.ReactNode;
 }) {
   const router = useRouter();
+  const isHire = useMe().restricted_access;
   const today = iso(new Date());
   const [mode, setMode] = useState<Mode>("month");
   const [anchor, setAnchor] = useState(today);
@@ -118,8 +120,9 @@ export function CalendarView({
               </button>
             ))}
           </div>
-          {view === "me" && <Button variant="outline" size="sm" onClick={() => setOpen({ date: today, leave: true })}><CalendarDays /> Request leave</Button>}
-          <Button size="sm" onClick={() => setOpen({ date: mode === "month" ? today : range.from < today && today <= range.to ? today : range.from })}><Plus /> New event</Button>
+          {/* A hired manager's calendar shows their tasks and project dates; they don't add to it. */}
+          {view === "me" && !isHire && <Button variant="outline" size="sm" onClick={() => setOpen({ date: today, leave: true })}><CalendarDays /> Request leave</Button>}
+          {!isHire && <Button size="sm" onClick={() => setOpen({ date: mode === "month" ? today : range.from < today && today <= range.to ? today : range.from })}><Plus /> New event</Button>}
         </div>
       </div>
 

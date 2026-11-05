@@ -64,6 +64,8 @@ class StatementOut(BaseModel):
     employee_name: str
     gross_revenue: Decimal  # credited from customer payments
     expenses: Decimal  # expenses tagged to the employee
+    # Their share of expenses split between employees: reports only, never part of `revenue` or salary.
+    shared_expenses: Decimal = Decimal(0)
     revenue: Decimal  # net = gross_revenue - expenses; the formula's basis (a negative net pays no share)
     formula_id: uuid.UUID | None
     formula_name: str | None
@@ -430,8 +432,20 @@ async def _employee_salary(session: AsyncSession, employee_id: uuid.UUID) -> Emp
     pays = await service.payments_for(session, employee_id)
     numbers = await lookup.resolve(session, "payment_entry", [p.payment_entry_id for p in pays])
     labels = {line.period.id: line.period.label for line in bal.lines}
+    shared = {
+        line.period.id: (
+            await attribution.expense_totals(
+                session, date_from=line.period.start_date, date_to=line.period.end_date, employee_ids=[employee_id]
+            )
+        ).get(employee_id)
+        or Decimal(0)
+        for line in bal.lines
+    }
     await session.commit()
-    statements = [StatementOut(**_statement(x, employee.full_name)) for x in reversed(bal.lines)]
+    statements = [
+        StatementOut(**_statement(x, employee.full_name), shared_expenses=shared[x.period.id])
+        for x in reversed(bal.lines)
+    ]
     return EmployeeSalaryOut(
         employee_id=employee.id,
         employee_name=employee.full_name,

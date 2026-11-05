@@ -857,6 +857,7 @@ stateDiagram-v2
 | P1 | Pay · supplier / operating expense | Expense account (category default or chosen) | Bank | No (optional employee/project tag) |
 | P2 | Pay · employee salary | 5100 Employee Salaries (employee, project shares) | Bank | Linked to salary statements |
 | P3 | Pay · owner drawings | 3200 Owner Drawings | Bank | No |
+| P4 | Pay · hired manager ([plan](hired-managers-plan.md)) | 5700 Hired Manager Fees (project, charged employee) | Bank | No. Paid to the project's hire, charged to its manager as an employee expense |
 | T1 | Internal transfer, same currency (incl. paying the credit card) | Destination | Source | No |
 | T2 | Internal transfer, different currency / crypto conversion | Destination (USD value received) | Source (USD value sent) | No. Difference → 4950 |
 
@@ -1249,6 +1250,8 @@ Each role grant has a scope: `own` (the user's own employee record), `project` (
 | `salary.adjust`, `salary.close_period` | all | all | — | — |
 | `salary.read` | all | all | — | own |
 | `projects.manage`, `tasks.manage` | all | — | project | — |
+| `projects.create_own` (own projects: the work and the hire, not the money or team) | all | — | — | own |
+| `hired_managers.read` | all | all | — | own |
 | `projects.read_financials` | all | all | project | — |
 | `tasks.update_own` | all | — | project | own |
 | `calendar.manage:company` | all | — | — | — |

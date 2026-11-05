@@ -57,11 +57,14 @@ async def replace_draft(
     ids = [r.employee_id for r in rows]
     if len(ids) != len(set(ids)):
         errors.append(field_error("allocations", "Each employee can appear only once", "duplicate"))
+    hires = await employees.hire_ids(session, ids)
     for i, r in enumerate(rows):
         try:
             await employees.get(session, r.employee_id)
         except NotFound:
             errors.append(field_error(f"allocations.{i}.employee_id", "Unknown employee"))
+        if r.employee_id in hires:
+            errors.append(field_error(f"allocations.{i}.employee_id", "Hired managers can't be in a split"))
         if r.project_id:
             try:
                 await projects.get(session, r.project_id)
@@ -317,6 +320,16 @@ def employee_shares(employee_id: uuid.UUID) -> Any:
         .where(RevenueAllocation.employee_id == employee_id, RevenueAllocation.status == "active")
         .subquery()
     )
+
+
+async def has_allocations(session: AsyncSession, employee_id: uuid.UUID) -> bool:
+    """Whether a draft or active split credits or charges this employee."""
+    stmt = (
+        select(RevenueAllocation.id)
+        .where(RevenueAllocation.employee_id == employee_id, RevenueAllocation.status != "cancelled")
+        .limit(1)
+    )
+    return (await session.execute(stmt)).first() is not None
 
 
 def payment_ids_for_employee(employee_id: uuid.UUID) -> Any:

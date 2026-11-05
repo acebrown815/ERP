@@ -58,6 +58,7 @@ DEFAULT_CHART: list[AccountSpec] = [
     AccountSpec("5400", "Marketing", "expense", "expense", "5000"),
     AccountSpec("5500", "Office Expenses", "expense", "expense", "5000"),
     AccountSpec("5600", "Bank & Payment Fees", "expense", "expense", "5000", system_key="bank_fees"),
+    AccountSpec("5700", "Hired Manager Fees", "expense", "expense", "5000", system_key="hire_fees"),
     _g("5900", "Other Expenses", "expense", "5000"),
     AccountSpec("5990", "Miscellaneous Expenses", "expense", "expense", "5900", system_key="other_expense"),
 ]

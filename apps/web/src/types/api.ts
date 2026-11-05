@@ -879,6 +879,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/hires/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Hire Options
+         * @description Active hires to pick from on a project: for staff, and for full-time employees on their own projects.
+         */
+        get: operations["hire_options_api_v1_hires_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/employees/me": {
         parameters: {
             query?: never;
@@ -961,6 +981,26 @@ export interface paths {
         put?: never;
         /** Create Project */
         post: operations["create_project_api_v1_projects_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/my-managers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Managers
+         * @description For a hire: the project managers they already work for, who a new project can be created under.
+         */
+        get: operations["my_managers_api_v1_projects_my_managers_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1103,6 +1143,26 @@ export interface paths {
          * @description Totals for the same filters as the list (what an employee or an account moved).
          */
         get: operations["entry_totals_api_v1_payment_entries_totals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/payment-entries/my-hires": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Hires
+         * @description The signed-in employee's hires, to filter their payments by: on their projects now, or paid by them before.
+         */
+        get: operations["my_hires_api_v1_payment_entries_my_hires_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1969,6 +2029,27 @@ export interface paths {
          * @description Money received per customer (receive) or paid per supplier / payee (pay), in the base currency.
          */
         get: operations["party_payments_api_v1_reports_party_payments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/hired-managers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Hired Managers
+         * @description One row per hire and project manager. Each figure counts only that manager's projects, so a manager
+         *     never sees what a shared hire does or earns for anyone else.
+         */
+        get: operations["hired_managers_api_v1_reports_hired_managers_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3194,6 +3275,11 @@ export interface components {
             gross_revenue: string;
             /** Expenses */
             expenses: string;
+            /**
+             * Shared Expenses
+             * @default 0
+             */
+            shared_expenses: string;
             /** Revenue */
             revenue: string;
             /** Formula Id */
@@ -3966,6 +4052,11 @@ export interface components {
             notes?: string | null;
             /** User Id */
             user_id?: string | null;
+            /**
+             * Is Hired Manager
+             * @default false
+             */
+            is_hired_manager: boolean;
         };
         /** EmployeeDetailOut */
         EmployeeDetailOut: {
@@ -4013,6 +4104,8 @@ export interface components {
             timezone: string | null;
             /** Notes */
             notes: string | null;
+            /** Is Hired Manager */
+            is_hired_manager: boolean;
             /**
              * Created At
              * Format: date-time
@@ -4088,6 +4181,8 @@ export interface components {
             timezone: string | null;
             /** Notes */
             notes: string | null;
+            /** Is Hired Manager */
+            is_hired_manager: boolean;
             /**
              * Created At
              * Format: date-time
@@ -4198,6 +4293,8 @@ export interface components {
             notes?: string | null;
             /** User Id */
             user_id?: string | null;
+            /** Is Hired Manager */
+            is_hired_manager?: boolean | null;
         };
         /** EntryCreateIn */
         EntryCreateIn: {
@@ -4893,6 +4990,113 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * HireOptionOut
+         * @description All an employee learns about hires when picking one for their project.
+         */
+        HireOptionOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Full Name */
+            full_name: string;
+        };
+        /** HirePay */
+        HirePay: {
+            /**
+             * Hire Id
+             * Format: uuid
+             */
+            hire_id: string;
+            /** Hire Name */
+            hire_name: string;
+            /** Amount */
+            amount: string;
+        };
+        /** HiredManagerRow */
+        HiredManagerRow: {
+            /**
+             * Hire Id
+             * Format: uuid
+             */
+            hire_id: string;
+            /** Hire Name */
+            hire_name: string;
+            /** Hire Status */
+            hire_status: string;
+            /** Manager Id */
+            manager_id: string | null;
+            /** Manager Name */
+            manager_name: string | null;
+            /**
+             * Projects
+             * @default 0
+             */
+            projects: number;
+            /**
+             * Tasks Created
+             * @default 0
+             */
+            tasks_created: number;
+            /**
+             * Tasks Completed
+             * @default 0
+             */
+            tasks_completed: number;
+            /**
+             * Tasks Open
+             * @default 0
+             */
+            tasks_open: number;
+            /**
+             * Tasks Overdue
+             * @default 0
+             */
+            tasks_overdue: number;
+            /** Last Activity */
+            last_activity?: string | null;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * Paid
+             * @default 0
+             */
+            paid: string;
+            /**
+             * Manager Gross Revenue
+             * @default 0
+             */
+            manager_gross_revenue: string;
+            /**
+             * Manager Net Revenue
+             * @default 0
+             */
+            manager_net_revenue: string;
+        };
+        /** HiredManagersOut */
+        HiredManagersOut: {
+            /**
+             * Date From
+             * Format: date
+             */
+            date_from: string;
+            /**
+             * Date To
+             * Format: date
+             */
+            date_to: string;
+            /** Base Currency */
+            base_currency: string;
+            /** Stale After Days */
+            stale_after_days: number;
+            /** Rows */
+            rows: components["schemas"]["HiredManagerRow"][];
+        };
         /** HoldingOut */
         HoldingOut: {
             /**
@@ -5249,6 +5453,16 @@ export interface components {
             permissions: {
                 [key: string]: string;
             };
+            /**
+             * Restricted Access
+             * @default false
+             */
+            restricted_access: boolean;
+            /**
+             * Can Select Hire
+             * @default false
+             */
+            can_select_hire: boolean;
             /** Csrf Token */
             csrf_token: string;
         };
@@ -5271,6 +5485,8 @@ export interface components {
              * Format: uuid
              */
             employee_id: string;
+            /** Employee Name */
+            employee_name?: string | null;
             /** Role */
             role: string | null;
             /** Default Allocation Pct */
@@ -5381,6 +5597,16 @@ export interface components {
              */
             shared_expenses: string;
             /**
+             * Hired Manager Pay
+             * @default 0
+             */
+            hired_manager_pay: string;
+            /**
+             * Hire Payments
+             * @default []
+             */
+            hire_payments: components["schemas"]["HirePay"][];
+            /**
              * Fx Gain Loss
              * @default 0
              */
@@ -5442,6 +5668,16 @@ export interface components {
             before_id?: string | null;
             /** After Id */
             after_id?: string | null;
+        };
+        /** MyHireOut */
+        MyHireOut: {
+            /**
+             * Party Id
+             * Format: uuid
+             */
+            party_id: string;
+            /** Full Name */
+            full_name: string;
         };
         /** MyProjectRow */
         MyProjectRow: {
@@ -6021,18 +6257,6 @@ export interface components {
             /** Scopes */
             scopes: string[];
         };
-        /** PersonOut */
-        PersonOut: {
-            /**
-             * Employee Id
-             * Format: uuid
-             */
-            employee_id: string;
-            /** Name */
-            name: string;
-            /** Profile Names */
-            profile_names: string[];
-        };
         /**
          * ProfileIn
          * @description The full list: names left out are removed.
@@ -6124,6 +6348,10 @@ export interface components {
             customer_party_id?: string | null;
             /** Manager Employee Id */
             manager_employee_id?: string | null;
+            /** Hire Employee Id */
+            hire_employee_id?: string | null;
+            /** Members */
+            members?: components["schemas"]["MemberIn"][] | null;
             /**
              * Project Type Category Id
              * Format: uuid
@@ -6234,8 +6462,16 @@ export interface components {
             name: string;
             /** Customer Party Id */
             customer_party_id: string | null;
+            /** Customer Name */
+            customer_name?: string | null;
             /** Manager Employee Id */
             manager_employee_id: string | null;
+            /** Manager Name */
+            manager_name?: string | null;
+            /** Hire Employee Id */
+            hire_employee_id: string | null;
+            /** Hire Name */
+            hire_name?: string | null;
             /**
              * Project Type Category Id
              * Format: uuid
@@ -6273,6 +6509,8 @@ export interface components {
              * @default []
              */
             members: components["schemas"]["MemberOut"][];
+            /** Edit Mode */
+            edit_mode?: ("full" | "own") | null;
         };
         /** ProjectRevenue */
         ProjectRevenue: {
@@ -6322,6 +6560,10 @@ export interface components {
             customer_party_id?: string | null;
             /** Manager Employee Id */
             manager_employee_id?: string | null;
+            /** Hire Employee Id */
+            hire_employee_id?: string | null;
+            /** Members */
+            members?: components["schemas"]["MemberIn"][] | null;
             /** Project Type Category Id */
             project_type_category_id?: string | null;
             /** Project Type Other Text */
@@ -6836,9 +7078,9 @@ export interface components {
             /** Unclaimed Tabs */
             unclaimed_tabs: string[];
             /** Employees */
-            employees: components["schemas"]["PersonOut"][];
+            employees: components["schemas"]["app__modules__bidding__schemas__PersonOut"][];
             /** Profiles Without Tab */
-            profiles_without_tab: components["schemas"]["PersonOut"][];
+            profiles_without_tab: components["schemas"]["app__modules__bidding__schemas__PersonOut"][];
             /** Job Tabs */
             job_tabs: components["schemas"]["JobTabOut"][];
             /** Cache Seconds */
@@ -6921,6 +7163,11 @@ export interface components {
             gross_revenue: string;
             /** Expenses */
             expenses: string;
+            /**
+             * Shared Expenses
+             * @default 0
+             */
+            shared_expenses: string;
             /** Revenue */
             revenue: string;
             /** Formula Id */
@@ -7618,6 +7865,28 @@ export interface components {
             capacity: string;
             /** Load */
             load: string;
+        };
+        /** PersonOut */
+        app__modules__bidding__schemas__PersonOut: {
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /** Name */
+            name: string;
+            /** Profile Names */
+            profile_names: string[];
+        };
+        /** PersonOut */
+        app__modules__projects__router__PersonOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Full Name */
+            full_name: string;
         };
     };
     responses: never;
@@ -9672,6 +9941,7 @@ export interface operations {
                 q?: string | null;
                 status?: ("active" | "on_leave" | "terminated") | null;
                 department_id?: string | null;
+                hired?: boolean | null;
                 page?: number;
                 page_size?: number;
             };
@@ -9730,6 +10000,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hire_options_api_v1_hires_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HireOptionOut"][];
                 };
             };
         };
@@ -9914,6 +10204,8 @@ export interface operations {
                 q?: string | null;
                 status?: ("planned" | "active" | "on_hold" | "completed" | "cancelled") | null;
                 customer_party_id?: string | null;
+                hire_employee_id?: string | null;
+                manager_employee_id?: string | null;
                 page?: number;
                 page_size?: number;
             };
@@ -9972,6 +10264,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_managers_api_v1_projects_my_managers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["app__modules__projects__router__PersonOut"][];
                 };
             };
         };
@@ -10424,6 +10736,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_hires_api_v1_payment_entries_my_hires_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyHireOut"][];
                 };
             };
         };
@@ -12354,6 +12686,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PartyReportOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hired_managers_api_v1_reports_hired_managers_get: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+                format?: "json" | "csv" | "xlsx" | "pdf";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HiredManagersOut"];
                 };
             };
             /** @description Validation Error */
