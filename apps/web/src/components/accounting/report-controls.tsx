@@ -1,22 +1,15 @@
 "use client";
 
+import { useState } from "react";
+
 import { ExportMenu } from "@/components/erp/export-menu";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input, Select } from "@/components/ui/input";
 import { useSalaryPeriods } from "@/lib/queries";
+import { ALL_TIME_FROM, matchPreset, monthRange, rangePresets, yearRange, type PresetKey, type Range } from "@/lib/report-ranges";
 import { formatDate } from "@/lib/utils";
 
-export type Range = { from: string; to: string };
-
-export function monthRange(d = new Date()): { from: string; to: string } {
-  const from = new Date(Date.UTC(d.getFullYear(), d.getMonth(), 1));
-  const to = new Date(Date.UTC(d.getFullYear(), d.getMonth() + 1, 0));
-  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
-}
-
-export function yearRange(d = new Date()): { from: string; to: string } {
-  return { from: `${d.getFullYear()}-01-01`, to: `${d.getFullYear()}-12-31` };
-}
+export { ALL_TIME_FROM, monthRange, yearRange };
+export type { Range };
 
 /**
  * "This month" for reporting = the current salary period (Settings → Salary Cycle), e.g. Oct 25 – Nov 24.
@@ -40,14 +33,43 @@ export function rangeText(r: Range): string {
   return `${formatDate(r.from)} – ${formatDate(r.to)}`;
 }
 
-export function DateRange({ from, to, onChange }: { from: string; to: string; onChange: (r: { from: string; to: string }) => void }) {
+/** A report's range: `initial` until someone picks another. `ready` is false while the salary periods load. */
+export function useReportRange(initial: PresetKey): { range: Range; setRange: (r: Range) => void; ready: boolean } {
+  const periods = useSalaryPeriods();
+  const [chosen, setRange] = useState<Range | null>(null);
+  const presets = rangePresets(periods.data ?? []);
+  const start = presets.find((p) => p.key === initial) ?? presets.find((p) => p.key === "all_time")!;
+  return { range: chosen ?? start.range, setRange, ready: !!chosen || !periods.isLoading };
+}
+
+/**
+ * A time range: a preset, or any two dates from the calendar. `wholePeriods` is for reports calculated per salary
+ * period, where dates inside a period still show all of it.
+ */
+export function DateRange({ from, to, onChange, wholePeriods }: { from: string; to: string; onChange: (r: Range) => void; wholePeriods?: boolean }) {
+  const presets = rangePresets(useSalaryPeriods().data ?? []);
+  const preset = matchPreset(presets, { from, to });
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Input aria-label="From" type="date" className="w-40" value={from} onChange={(e) => onChange({ from: e.target.value, to })} />
-      <span className="text-muted-foreground">–</span>
-      <Input aria-label="To" type="date" className="w-40" value={to} onChange={(e) => onChange({ from, to: e.target.value })} />
-      <PeriodButtons onChange={onChange} />
-      <Button type="button" variant="ghost" size="sm" onClick={() => onChange(yearRange())}>This year</Button>
+    <div className="flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <Select aria-label="Time range" className="w-40" value={preset ?? "custom"}
+          onChange={(e) => {
+            const picked = presets.find((p) => p.key === e.target.value);
+            if (picked) onChange(picked.range);
+          }}>
+          {presets.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+          {!preset && <option value="custom">Custom</option>}
+        </Select>
+        {/* Clearing a date leaves the last one in place: every report needs both ends. */}
+        <Input aria-label="From" type="date" className="w-40" value={from} onChange={(e) => e.target.value && onChange({ from: e.target.value, to })} />
+        <span className="text-muted-foreground">–</span>
+        <Input aria-label="To" type="date" className="w-40" value={to} onChange={(e) => e.target.value && onChange({ from, to: e.target.value })} />
+      </div>
+      {from > to ? (
+        <p role="alert" className="text-xs text-destructive">The From date is after the To date.</p>
+      ) : wholePeriods && !preset ? (
+        <p className="text-xs text-muted-foreground">Shows every salary period these dates touch, in full.</p>
+      ) : null}
     </div>
   );
 }
@@ -55,23 +77,6 @@ export function DateRange({ from, to, onChange }: { from: string; to: string; on
 /** Export button for the accounting reports: CSV, Excel or PDF. */
 export function CsvButton({ path, params }: { path: string; params: Record<string, string | undefined | null> }) {
   return <ExportMenu path={path} params={params} />;
-}
-
-/** Shortcuts for the current and previous salary period (the company's "month"). */
-function PeriodButtons({ onChange }: { onChange: (r: Range) => void }) {
-  const { current, previous } = usePeriodRanges();
-  return (
-    <>
-      <Button type="button" variant="ghost" size="sm" title={rangeText(current)} onClick={() => onChange({ from: current.from, to: current.to })}>
-        This month ({current.label})
-      </Button>
-      {previous && (
-        <Button type="button" variant="ghost" size="sm" title={rangeText(previous)} onClick={() => onChange({ from: previous.from, to: previous.to })}>
-          Last month
-        </Button>
-      )}
-    </>
-  );
 }
 
 const shiftDays = (iso: string, days: number) => {

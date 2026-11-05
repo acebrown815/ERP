@@ -11,11 +11,11 @@ import { useCategories } from "@/components/erp/category-select";
 import { DataTable } from "@/components/erp/data-table";
 import { PageHeader } from "@/components/erp/page-header";
 import { EmptyState } from "@/components/erp/states";
-import { PROJECT_STATUS, ProjectDialog } from "@/components/projects/project-dialog";
+import { PROJECT_STATUS, ProjectDialog, ProjectStatusBadge } from "@/components/projects/project-dialog";
 import { ProgressBar } from "@/components/projects/shared";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
-import { Badge, Card } from "@/components/ui/misc";
+import { Card } from "@/components/ui/misc";
 import { api } from "@/lib/api";
 import { formatAmount, sign } from "@/lib/money";
 import { useHireOptions } from "@/lib/queries";
@@ -174,7 +174,7 @@ function ProjectsList() {
       {
         accessorKey: "status",
         header: "Status",
-        cell: ({ row }) => <Badge variant={PROJECT_STATUS[row.original.status]?.variant}>{PROJECT_STATUS[row.original.status]?.label}</Badge>,
+        cell: ({ row }) => <ProjectStatusBadge status={row.original.status} lapsed={row.original.lapsed} />,
       },
     ],
     [types.data, progress.data, financials.data, mine.data, isHire], // eslint-disable-line react-hooks/exhaustive-deps

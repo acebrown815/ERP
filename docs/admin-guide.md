@@ -40,9 +40,13 @@ How to set up and run the ERP day to day. For servers, backups and monitoring se
    - **Employee Performance**: per person, revenue brought in (net of their tagged expenses), salary earned, what is left for the company, salary as a % of revenue, and revenue per hour logged.
    - **Income & Expenses by Category** and **Customer & Supplier Payments**: any date range, compared with the previous period.
    - **Project Financials**: profit per project with a chart, hours against estimate and revenue per hour; each project's Financials tab shows it month by month against its budget.
-   - **Employee Salary Report**.
+   - **Employee Salary Report** and **Revenue Contributions**.
 
    Months are salary periods. Amounts in tables open Payment Entries filtered to the payments behind them. Every report exports to CSV, Excel or PDF.
+
+   Reports with a time range offer This month, Last month, Last 3 months, Last 6 months, This year and All time, or any two dates from the calendar. Salary is calculated per whole salary period, so Employee Performance, Employee Salary Report and Revenue Contributions show every period your dates touch, in full.
+
+   An active project with no income in the last 3 months shows as **Lapsed**. It's worked out automatically and clears with the next receipt: the project's status stays Active until you change it. A new project has 3 months from its start date to receive its first payment. People with restricted access don't see this.
 
 ## 4. Checks and safety nets
 

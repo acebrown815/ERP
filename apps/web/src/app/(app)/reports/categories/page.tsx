@@ -3,7 +3,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { DateRange, usePeriodRanges, usePreviousRange, type Range } from "@/components/accounting/report-controls";
+import { ALL_TIME_FROM, DateRange, usePeriodRanges, usePreviousRange, type Range } from "@/components/accounting/report-controls";
 import { ExportMenu } from "@/components/erp/export-menu";
 import { PageHeader } from "@/components/erp/page-header";
 import { EmptyState, ErrorState, TableSkeleton } from "@/components/erp/states";
@@ -28,16 +28,17 @@ export default function CategoryReportPage() {
     enabled: !!chosen || !periods.loading,
   });
   const r = q.data;
+  const comparable = range.from !== ALL_TIME_FROM; // nothing comes before all time
   const [compare, setCompare] = useState(true);
   const prev = usePreviousRange(range);
   const pq = useQuery({
     queryKey: ["report-by-category", kind, { from: prev.from, to: prev.to }],
     queryFn: () => api.get<CategoryReport>("/reports/by-category", { kind, from: prev.from, to: prev.to }),
-    enabled: compare && (!!chosen || !periods.loading),
+    enabled: compare && comparable && (!!chosen || !periods.loading),
   });
   const key = (x: { account_code: string; category_id?: string | null }) => `${x.account_code}:${x.category_id ?? ""}`;
   const before = new Map((pq.data?.rows ?? []).map((x) => [key(x), x.amount]));
-  const showPrev = compare && !!pq.data;
+  const showPrev = compare && comparable && !!pq.data;
   // Rows that only existed in the previous range still show, at zero now.
   const gone = showPrev && r ? pq.data!.rows.filter((x) => !r.rows.some((y) => key(y) === key(x))) : [];
   const change = (now: string, then: string | undefined) => subtract(now, then ?? "0");
@@ -59,10 +60,12 @@ export default function CategoryReportPage() {
             ))}
           </div>
           <DateRange {...range} onChange={setRange} />
-          <div className="flex items-center gap-2">
-            <Checkbox id="cmp" checked={compare} onChange={(e) => setCompare(e.target.checked)} />
-            <Label htmlFor="cmp" className="font-normal">Compare with {prev.label}</Label>
-          </div>
+          {comparable && (
+            <div className="flex items-center gap-2">
+              <Checkbox id="cmp" checked={compare} onChange={(e) => setCompare(e.target.checked)} />
+              <Label htmlFor="cmp" className="font-normal">Compare with {prev.label}</Label>
+            </div>
+          )}
         </CardContent>
       </Card>
       <Card>

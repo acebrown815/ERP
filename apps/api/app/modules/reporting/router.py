@@ -39,6 +39,7 @@ class ProjectFinancialsOut(BaseModel):
     number: str
     name: str
     status: str
+    lapsed: bool = False  # active, but no income in the last 3 months
     customer_name: str | None
     base_currency: str
     contract_value: Decimal | None
@@ -74,6 +75,7 @@ async def _financials(
     pay = await salary.project_salary(session, ids)
     progress = await tasks.progress(session, ids, await settings.today(session))
     customers = await lookup.resolve(session, "party", (p.customer_party_id for p in project_list))
+    lapsed = await projects.lapsed_ids(session, project_list)
     out = []
     for p in project_list:
         led = ledger[p.id]
@@ -88,6 +90,7 @@ async def _financials(
                 number=p.number,
                 name=p.name,
                 status=p.status,
+                lapsed=p.id in lapsed,
                 customer_name=customers.get(p.customer_party_id) if p.customer_party_id else None,
                 base_currency=base,
                 contract_value=p.contract_value,
@@ -155,6 +158,7 @@ async def project_profitability(
             "name",
             "customer_name",
             "status",
+            "lapsed",
             "contract_value",
             "budget",
             "revenue",

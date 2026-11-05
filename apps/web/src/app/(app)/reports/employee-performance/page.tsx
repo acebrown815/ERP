@@ -3,18 +3,18 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Receipt } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
 
+import { DateRange, useReportRange } from "@/components/accounting/report-controls";
 import { num, PeriodChart, SERIES, Sparkline, StatTile } from "@/components/charts/charts";
+import { ExportMenu } from "@/components/erp/export-menu";
 import { PageHeader } from "@/components/erp/page-header";
 import { EmptyState, ErrorState, TableSkeleton } from "@/components/erp/states";
 import { paymentsHref, shortLabel } from "@/components/reports/shared";
-import { PeriodRange, rangeQuery, type Range } from "@/components/salary/period-range";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/misc";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import { formatAmount, sign } from "@/lib/money";
-import { useCompany, useSalaryPeriods } from "@/lib/queries";
+import { useCompany } from "@/lib/queries";
 import type { Performance } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -23,12 +23,12 @@ const HIGH_SALARY_PCT = 50;
 
 export default function EmployeePerformancePage() {
   const base = useCompany().data?.base_currency ?? "USD";
-  const periods = useSalaryPeriods();
-  const [range, setRange] = useState<Range>({});
+  const { range, setRange, ready } = useReportRange("last_6");
   const q = useQuery({
     queryKey: ["report-employee-performance", range],
-    queryFn: () => api.get<Performance>("/reports/employee-performance", rangeQuery(range)),
+    queryFn: () => api.get<Performance>("/reports/employee-performance", range),
     placeholderData: keepPreviousData,
+    enabled: ready,
   });
   const r = q.data;
   const t = r?.totals;
@@ -41,7 +41,12 @@ export default function EmployeePerformancePage() {
       <PageHeader
         title="Employee performance"
         description={`What each person brings in, what they cost, and what is left for the company (${base}). Revenue is net of expenses tagged to them; salary is what they earned, paid or not; shared expenses are their part of split expenses (reports only).`}
-        actions={periods.data && <PeriodRange periods={periods.data} value={range} onChange={setRange} csvPath="/reports/employee-performance" />}
+        actions={
+          <>
+            <DateRange {...range} onChange={setRange} wholePeriods />
+            <ExportMenu path="/reports/employee-performance" params={range} />
+          </>
+        }
       />
       {q.isError ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : !r ? <TableSkeleton /> : r.rows.length === 0 || !t ? (
         <EmptyState title="No revenue or salary in these periods" />

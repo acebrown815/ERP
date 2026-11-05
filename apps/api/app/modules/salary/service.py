@@ -716,18 +716,6 @@ async def set_cycle(session: AsyncSession, *, actor_id: uuid.UUID, day: int) -> 
 # ---- reporting helpers -----------------------------------------------------------------------------
 
 
-async def periods_between(session: AsyncSession, first_id: uuid.UUID, last_id: uuid.UUID) -> list[SalaryPeriod]:
-    a, b = await get_period(session, first_id), await get_period(session, last_id)
-    lo, hi = min(a.start_date, b.start_date), max(a.start_date, b.start_date)
-    return list(
-        (
-            await session.execute(
-                select(SalaryPeriod).where(SalaryPeriod.start_date.between(lo, hi)).order_by(SalaryPeriod.start_date)
-            )
-        ).scalars()
-    )
-
-
 async def employee_names(session: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
     return await employees.names(session, ids)
 

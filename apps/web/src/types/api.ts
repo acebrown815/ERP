@@ -6402,6 +6402,11 @@ export interface components {
             name: string;
             /** Status */
             status: string;
+            /**
+             * Lapsed
+             * @default false
+             */
+            lapsed: boolean;
             /** Customer Name */
             customer_name: string | null;
             /** Base Currency */
@@ -6511,6 +6516,11 @@ export interface components {
             members: components["schemas"]["MemberOut"][];
             /** Edit Mode */
             edit_mode?: ("full" | "own") | null;
+            /**
+             * Lapsed
+             * @default false
+             */
+            lapsed: boolean;
         };
         /** ProjectRevenue */
         ProjectRevenue: {
@@ -11926,8 +11936,8 @@ export interface operations {
     revenue_report_api_v1_reports_employee_revenue_get: {
         parameters: {
             query?: {
-                from_period_id?: string | null;
-                to_period_id?: string | null;
+                from?: string | null;
+                to?: string | null;
                 format?: "json" | "csv" | "xlsx" | "pdf";
             };
             header?: never;
@@ -11959,8 +11969,8 @@ export interface operations {
     salary_report_api_v1_reports_employee_salary_get: {
         parameters: {
             query?: {
-                from_period_id?: string | null;
-                to_period_id?: string | null;
+                from?: string | null;
+                to?: string | null;
                 format?: "json" | "csv" | "xlsx" | "pdf";
             };
             header?: never;
@@ -11992,8 +12002,8 @@ export interface operations {
     performance_report_api_v1_reports_employee_performance_get: {
         parameters: {
             query?: {
-                from_period_id?: string | null;
-                to_period_id?: string | null;
+                from?: string | null;
+                to?: string | null;
                 format?: "json" | "csv" | "xlsx" | "pdf";
             };
             header?: never;

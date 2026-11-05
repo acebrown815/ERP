@@ -8,10 +8,10 @@ import { num, PeriodChart, SERIES } from "@/components/charts/charts";
 import { PageHeader } from "@/components/erp/page-header";
 import { ErrorState, TableSkeleton } from "@/components/erp/states";
 import { ExportMenu } from "@/components/erp/export-menu";
-import { PROJECT_STATUS } from "@/components/projects/project-dialog";
+import { PROJECT_STATUS, ProjectStatusBadge } from "@/components/projects/project-dialog";
 import { ProgressBar } from "@/components/projects/shared";
 import { Select } from "@/components/ui/input";
-import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/misc";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/misc";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import { formatAmount, sign, sum } from "@/lib/money";
@@ -84,7 +84,7 @@ export default function ProjectFinancialsPage() {
                   <TD>
                     <Link href={`/projects/${r.project_id}?tab=financials`} className="font-medium hover:underline">{r.name}</Link>
                     <span className="block text-xs text-muted-foreground">
-                      {r.number}{r.customer_name ? ` · ${r.customer_name}` : ""} · <Badge variant={PROJECT_STATUS[r.status]?.variant}>{PROJECT_STATUS[r.status]?.label}</Badge>
+                      {r.number}{r.customer_name ? ` · ${r.customer_name}` : ""} · <ProjectStatusBadge status={r.status} lapsed={r.lapsed} />
                     </span>
                   </TD>
                   <TD className="tabular text-right">{formatAmount(r.revenue)}</TD>

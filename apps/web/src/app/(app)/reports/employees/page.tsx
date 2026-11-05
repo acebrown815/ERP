@@ -1,27 +1,28 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useState } from "react";
 
+import { DateRange, useReportRange } from "@/components/accounting/report-controls";
+import { ExportMenu } from "@/components/erp/export-menu";
 import { PageHeader } from "@/components/erp/page-header";
 import { EmptyState, ErrorState, TableSkeleton } from "@/components/erp/states";
-import { PeriodRange, rangeQuery, type Range } from "@/components/salary/period-range";
 import { periodRange, SalaryStatus } from "@/components/salary/shared";
 import { Card } from "@/components/ui/misc";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import { formatAmount, sign } from "@/lib/money";
-import { useCompany, useSalaryPeriods } from "@/lib/queries";
+import { useCompany } from "@/lib/queries";
 import type { SalaryReport } from "@/lib/types";
 
 export default function EmployeeSalaryReportPage() {
   const base = useCompany().data?.base_currency ?? "USD";
-  const periods = useSalaryPeriods();
-  const [range, setRange] = useState<Range>({});
+  const { range, setRange, ready } = useReportRange("last_6");
   const q = useQuery({
     queryKey: ["report-employee-salary", range],
-    queryFn: () => api.get<SalaryReport>("/reports/employee-salary", rangeQuery(range)),
+    queryFn: () => api.get<SalaryReport>("/reports/employee-salary", range),
+    placeholderData: keepPreviousData,
+    enabled: ready,
   });
   const r = q.data;
   return (
@@ -29,7 +30,12 @@ export default function EmployeeSalaryReportPage() {
       <PageHeader
         title="Employee salary report"
         description={`Revenue, calculated salary and salary paid per employee and salary period (${base}). Balance is all periods to date.`}
-        actions={periods.data && <PeriodRange periods={periods.data} value={range} onChange={setRange} csvPath="/reports/employee-salary" />}
+        actions={
+          <>
+            <DateRange {...range} onChange={setRange} wholePeriods />
+            <ExportMenu path="/reports/employee-salary" params={range} />
+          </>
+        }
       />
       <Card className="overflow-x-auto">
         {q.isError ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : !r ? <TableSkeleton /> : r.rows.length === 0 ? (

@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -627,15 +627,22 @@ async def set_cycle(
 # ---- reports ---------------------------------------------------------------------------------------
 
 
-async def _report_periods(
-    session: AsyncSession, from_id: uuid.UUID | None, to_id: uuid.UUID | None
-) -> list[SalaryPeriod]:
-    """Defaults to the last six periods up to the current one."""
+FromDate = Annotated[date | None, Query(alias="from")]
+ToDate = Annotated[date | None, Query(alias="to")]
+
+
+async def _report_periods(session: AsyncSession, date_from: date | None, date_to: date | None) -> list[SalaryPeriod]:
+    """Started periods overlapping the dates, in full, because salary is only calculated per whole period.
+    Either end may be left open. With neither: the last six periods up to the current one."""
     today = await settings.today(session)
-    if from_id and to_id:
-        return await service.periods_between(session, from_id, to_id)
     started = [p for p in reversed(await service.list_periods(session)) if p.start_date <= today]
-    return started[-6:]
+    if date_from is None and date_to is None:
+        return started[-6:]
+    return [
+        p
+        for p in started
+        if (date_from is None or p.end_date >= date_from) and (date_to is None or p.start_date <= date_to)
+    ]
 
 
 def _report_period(p: SalaryPeriod) -> ReportPeriod:
@@ -644,14 +651,14 @@ def _report_period(p: SalaryPeriod) -> ReportPeriod:
 
 @router.get("/reports/employee-revenue", response_model=RevenueReportOut)
 async def revenue_report(
-    from_period_id: uuid.UUID | None = None,
-    to_period_id: uuid.UUID | None = None,
+    date_from: FromDate = None,
+    date_to: ToDate = None,
     format: Format = "json",
     user: CurrentUser = Depends(require("revenue.read")),
     session: AsyncSession = Depends(get_session),
 ) -> Any:
     """Attributed revenue per employee per salary period."""
-    periods = await _report_periods(session, from_period_id, to_period_id)
+    periods = await _report_periods(session, date_from, date_to)
     await session.commit()
     visible = await _visible(session, user, "revenue.read")
     ids = list(visible) if visible is not None else None
@@ -709,14 +716,14 @@ async def revenue_report(
 
 @router.get("/reports/employee-salary", response_model=SalaryReportOut)
 async def salary_report(
-    from_period_id: uuid.UUID | None = None,
-    to_period_id: uuid.UUID | None = None,
+    date_from: FromDate = None,
+    date_to: ToDate = None,
     format: Format = "json",
     user: CurrentUser = Depends(require("salary.read")),
     session: AsyncSession = Depends(get_session),
 ) -> Any:
     """Revenue, calculated and paid salary per employee per period, with today's balance."""
-    periods = await _report_periods(session, from_period_id, to_period_id)
+    periods = await _report_periods(session, date_from, date_to)
     visible = await _visible(session, user, "salary.read")
     today = await settings.today(session)
     bal = await service.balances(
@@ -806,20 +813,24 @@ def _pct(part: Decimal, whole: Decimal) -> Decimal | None:
 
 @router.get("/reports/employee-performance", response_model=PerformanceOut)
 async def performance_report(
-    from_period_id: uuid.UUID | None = None,
-    to_period_id: uuid.UUID | None = None,
+    date_from: FromDate = None,
+    date_to: ToDate = None,
     format: Format = "json",
     user: CurrentUser = Depends(require("salary.read")),
     session: AsyncSession = Depends(get_session),
 ) -> Any:
     """Per employee: revenue brought in, expenses tagged to them, salary earned, and what is left for the company."""
-    periods = await _report_periods(session, from_period_id, to_period_id)
+    periods = await _report_periods(session, date_from, date_to)
     visible = await _visible(session, user, "salary.read")
     today = await settings.today(session)
     bal = await service.balances(
         session, list(visible) if visible is not None else None, until=max([today, *(p.start_date for p in periods)])
     )
-    hours = await tasks.hours_by_employee(session, date_from=periods[0].start_date, date_to=periods[-1].end_date)
+    hours = (
+        await tasks.hours_by_employee(session, date_from=periods[0].start_date, date_to=periods[-1].end_date)
+        if periods
+        else {}
+    )
     shared_by_period = [
         await attribution.expense_totals(session, date_from=p.start_date, date_to=p.end_date) for p in periods
     ]

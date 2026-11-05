@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 /** "Oct 2026 (transition)" → "Oct 2026*" for chart axes. */
 export const shortLabel = (label: string) => label.replace(" (transition)", "*");
 
-const monthsLabel = (n: number) => (n === 0 ? "All time" : n === 12 ? "Last year" : n % 12 === 0 ? `Last ${n / 12} years` : `Last ${n} months`);
+const monthsLabel = (n: number) => (n === 0 ? "All time" : n === 1 ? "This month" : n === 12 ? "Last year" : n % 12 === 0 ? `Last ${n / 12} years` : `Last ${n} months`);
 
 /** Months to show; 0 means all time (only where the report supports it). */
 export function MonthsSelect({ value, onChange, options = [3, 6, 12, 24] }: { value: number; onChange: (n: number) => void; options?: number[] }) {

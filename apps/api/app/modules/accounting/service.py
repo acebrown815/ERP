@@ -769,6 +769,25 @@ async def project_ledger(
     return out
 
 
+async def project_last_income(session: AsyncSession, project_ids: list[uuid.UUID]) -> dict[uuid.UUID, date]:
+    """The latest date each project received income. Cancelled receipts don't count."""
+    if not project_ids:
+        return {}
+    stmt = (
+        select(JournalLine.project_id, func.max(JournalEntry.posting_date))
+        .join(Account, Account.id == JournalLine.account_id)
+        .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
+        .where(
+            JournalLine.project_id.in_(project_ids),
+            Account.root_type == "income",
+            JournalLine.credit_base > 0,
+            JournalEntry.reversed_by_id.is_(None),
+        )
+        .group_by(JournalLine.project_id)
+    )
+    return {pid: day for pid, day in (await session.execute(stmt)).all()}
+
+
 @dataclass
 class CategoryTotal:
     account_id: uuid.UUID
