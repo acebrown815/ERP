@@ -11,6 +11,7 @@ import { EmployeePicker, HirePicker, PartyPicker } from "@/components/erp/picker
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/input";
+import { Badge } from "@/components/ui/misc";
 import { api, ApiError } from "@/lib/api";
 import { sum } from "@/lib/money";
 import { useCurrencies } from "@/lib/queries";
@@ -24,6 +25,12 @@ export const PROJECT_STATUS: Record<string, { label: string; variant: "success" 
   completed: { label: "Completed", variant: "muted" },
   cancelled: { label: "Cancelled", variant: "muted" },
 };
+
+/** A project's status as people read it: active with no income for 3 months (the API decides) shows as Lapsed. */
+export function ProjectStatusBadge({ status, lapsed }: { status: string; lapsed?: boolean }) {
+  if (lapsed) return <Badge variant="warning" title="Active, but no income in the last 3 months">Lapsed</Badge>;
+  return <Badge variant={PROJECT_STATUS[status]?.variant}>{PROJECT_STATUS[status]?.label}</Badge>;
+}
 
 type MemberDraft = { employee_id: string | null; role: string; pct: string };
 

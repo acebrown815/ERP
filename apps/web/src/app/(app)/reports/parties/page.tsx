@@ -4,7 +4,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
 
-import { DateRange, usePreviousRange, yearRange, type Range } from "@/components/accounting/report-controls";
+import { ALL_TIME_FROM, DateRange, usePreviousRange, yearRange, type Range } from "@/components/accounting/report-controls";
 import { ExportMenu } from "@/components/erp/export-menu";
 import { PageHeader } from "@/components/erp/page-header";
 import { EmptyState, ErrorState, TableSkeleton } from "@/components/erp/states";
@@ -26,15 +26,16 @@ export default function PartyPaymentsPage() {
     placeholderData: keepPreviousData,
   });
   const r = q.data;
+  const comparable = range.from !== ALL_TIME_FROM; // nothing comes before all time
   const [compare, setCompare] = useState(true);
   const prev = usePreviousRange(range);
   const pq = useQuery({
     queryKey: ["report-party-payments", direction, { from: prev.from, to: prev.to }],
     queryFn: () => api.get<PartyReport>("/reports/party-payments", { direction, from: prev.from, to: prev.to }),
-    enabled: compare,
+    enabled: compare && comparable,
   });
   const before = new Map((pq.data?.rows ?? []).map((x) => [x.party_id ?? "", x.total]));
-  const showPrev = compare && !!pq.data;
+  const showPrev = compare && comparable && !!pq.data;
   const change = (now: string, then: string | undefined) => subtract(now, then ?? "0");
   return (
     <>
@@ -54,10 +55,12 @@ export default function PartyPaymentsPage() {
             ))}
           </div>
           <DateRange {...range} onChange={setRange} />
-          <div className="flex items-center gap-2">
-            <Checkbox id="cmp" checked={compare} onChange={(e) => setCompare(e.target.checked)} />
-            <Label htmlFor="cmp" className="font-normal">Compare with {prev.label}</Label>
-          </div>
+          {comparable && (
+            <div className="flex items-center gap-2">
+              <Checkbox id="cmp" checked={compare} onChange={(e) => setCompare(e.target.checked)} />
+              <Label htmlFor="cmp" className="font-normal">Compare with {prev.label}</Label>
+            </div>
+          )}
         </CardContent>
       </Card>
       <Card>

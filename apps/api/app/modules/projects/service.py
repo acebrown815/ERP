@@ -1,8 +1,10 @@
 import uuid
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from dateutil.relativedelta import relativedelta
 from sqlalchemy import Select, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +18,8 @@ from app.modules.parties import api as parties
 from app.modules.projects.models import Milestone, Project, ProjectMember
 from app.modules.rbac.api import Scope
 from app.modules.settings import api as settings
+
+LAPSED_AFTER_MONTHS = 3
 
 EDITABLE = (
     "name",
@@ -93,6 +97,22 @@ async def visible_project_ids(session: AsyncSession, user: CurrentUser) -> set[u
     )
     member = select(ProjectMember.project_id).where(ProjectMember.employee_id == employee.id)
     return set((await session.execute(managed.union(member))).scalars())
+
+
+async def lapsed_ids(session: AsyncSession, rows: list[Project]) -> set[uuid.UUID]:
+    """Active projects with no income in the last 3 months. Worked out when read, never stored, so a new receipt
+    clears it. A project is given 3 months from its start (or creation, without a start date) to earn its first."""
+    from app.modules.accounting import api as accounting  # accounting depends on modules that depend on projects
+
+    active = [p for p in rows if p.status == "active"]
+    last_income = await accounting.project_last_income(session, [p.id for p in active])
+    cutoff = await settings.today(session) - relativedelta(months=LAPSED_AFTER_MONTHS)
+
+    def last_sign_of_life(p: Project) -> date:
+        known = [d for d in (last_income.get(p.id), p.start_date) if d]
+        return max(known) if known else p.created_at.date()
+
+    return {p.id for p in active if last_sign_of_life(p) < cutoff}
 
 
 async def customer_ids_for(session: AsyncSession, project_ids: set[uuid.UUID]) -> set[uuid.UUID]:

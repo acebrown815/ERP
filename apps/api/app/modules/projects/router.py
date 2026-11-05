@@ -71,6 +71,7 @@ class ProjectOut(BaseModel):
     members: list[MemberOut] = []
     # What the signed-in user may edit: full, own (work and hire), or nothing.
     edit_mode: Literal["full", "own"] | None = None
+    lapsed: bool = False  # active, but no income in the last 3 months
 
 
 class MemberIn(BaseModel):
@@ -123,8 +124,14 @@ class MembersIn(BaseModel):
 
 
 async def _out(
-    session: AsyncSession, user: CurrentUser, viewer: service.Viewer, project: service.Project
+    session: AsyncSession,
+    user: CurrentUser,
+    viewer: service.Viewer,
+    project: service.Project,
+    lapsed: set[uuid.UUID] | None = None,
 ) -> ProjectOut:
+    if lapsed is None:
+        lapsed = await service.lapsed_ids(session, [project])
     rows = await service.members(session, project.id)
     people = [project.manager_employee_id, project.hire_employee_id, *(m.employee_id for m in rows)]
     names = await employees.names(session, [p for p in people if p])
@@ -135,6 +142,7 @@ async def _out(
             "manager_name": names.get(project.manager_employee_id),
             "hire_name": names.get(project.hire_employee_id),
             "edit_mode": service.edit_mode(user, viewer, project),
+            "lapsed": project.id in lapsed and not viewer.restricted,
         }
     )
     is_manager = viewer.employee_id is not None and project.manager_employee_id == viewer.employee_id
@@ -169,8 +177,9 @@ async def list_projects(
     )
     rows, total = await paginate(session, stmt, params)
     viewer = await service.viewer_for(session, user)
+    lapsed = await service.lapsed_ids(session, list(rows))
     return Page(
-        items=[await _out(session, user, viewer, p) for p in rows],
+        items=[await _out(session, user, viewer, p, lapsed) for p in rows],
         total=total,
         page=params.page,
         page_size=params.page_size,

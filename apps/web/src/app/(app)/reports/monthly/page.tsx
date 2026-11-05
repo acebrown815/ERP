@@ -70,10 +70,10 @@ export default function MonthlySummaryPage() {
   const earlier = periods ? all.slice(0, -periods).slice(-periods) : [];
   const prev = periods && earlier.length === periods ? totals(earlier) : null;
   const margin = num(total.income) > 0 ? (num(total.profit) / num(total.income)) * 100 : null;
-  const span = periods ? `last ${rows.length} month${rows.length === 1 ? "" : "s"}` : `all time (${rows.length} month${rows.length === 1 ? "" : "s"})`;
+  const span = periods === 1 ? "this month" : periods ? `last ${rows.length} month${rows.length === 1 ? "" : "s"}` : `all time (${rows.length} month${rows.length === 1 ? "" : "s"})`;
   const soFar = rows.at(-1)?.in_progress ? `Includes ${rows.at(-1)!.label} so far` : undefined;
   const trend = (f: (m: Month) => string) => rows.map((m) => num(f(m)));
-  const vsPrev = periods === 12 ? "vs the year before" : periods === 24 ? "vs the 2 years before" : `vs previous ${periods} months`;
+  const vsPrev = periods === 1 ? "vs last month" : periods === 12 ? "vs the year before" : periods === 24 ? "vs the 2 years before" : `vs previous ${periods} months`;
   const base = r?.base_currency ?? "";
   // What the selected employees paid their hires in the range. It's already part of their expenses.
   const hirePay = [...rows.flatMap((m) => m.hire_payments ?? []).reduce((byHire, p) => {
@@ -106,7 +106,7 @@ export default function MonthlySummaryPage() {
                 <OwnerSelect value={selection} onChange={setSelection} />
               </div>
             )}
-            <MonthsSelect value={periods} onChange={setPeriods} options={[3, 6, 12, 24, 0]} />
+            <MonthsSelect value={periods} onChange={setPeriods} options={[1, 3, 6, 12, 24, 0]} />
             <ExportMenu path="/reports/monthly-summary" params={{ periods: String(periods), ...params }} />
           </>
         }

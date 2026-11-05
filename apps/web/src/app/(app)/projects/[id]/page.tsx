@@ -13,7 +13,7 @@ import { ErrorState, TableSkeleton } from "@/components/erp/states";
 import { ProjectFinancialsView } from "@/components/projects/financials";
 import { Gantt } from "@/components/projects/gantt";
 import { KanbanBoard } from "@/components/projects/kanban";
-import { PROJECT_STATUS, ProjectDialog } from "@/components/projects/project-dialog";
+import { ProjectDialog, ProjectStatusBadge } from "@/components/projects/project-dialog";
 import { isOverdue, PriorityLabel, ProgressBar, TASK_STATUSES, TaskStatusBadge } from "@/components/projects/shared";
 import { TaskPanel } from "@/components/projects/task-panel";
 import { Button } from "@/components/ui/button";
@@ -226,7 +226,7 @@ export default function ProjectPage() {
     <>
       <PageHeader
         title={p.name}
-        description={<><span className="font-mono">{p.number}</span> · <Badge variant={PROJECT_STATUS[p.status]?.variant}>{PROJECT_STATUS[p.status]?.label}</Badge></>}
+        description={<><span className="font-mono">{p.number}</span> · <ProjectStatusBadge status={p.status} lapsed={p.lapsed} /></>}
         actions={
           <>
             <Button variant="outline" asChild><Link href="/projects"><ArrowLeft /> Projects</Link></Button>
